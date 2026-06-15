@@ -162,6 +162,14 @@ function getStatusLabel(status) {
   return labels[status] || "Programado";
 }
 
+function getMatchDisplayValue(game) {
+  if (["live", "finished"].includes(game.status) && game.score) {
+    return game.score;
+  }
+
+  return game.time || "--:--";
+}
+
 function mapEspnStatus(statusType = {}) {
   const statusName = normalizeText(statusType.name);
   const description = normalizeText(statusType.description);
@@ -360,7 +368,7 @@ function renderGameCard(game) {
   status.classList.toggle("is-finished", game.status === "finished");
   card.querySelector(".home-team").textContent = game.home;
   card.querySelector(".away-team").textContent = game.away;
-  card.querySelector(".score-time").textContent = game.score || game.time || "--:--";
+  card.querySelector(".score-time").textContent = getMatchDisplayValue(game);
   card.querySelector(".stage").textContent = game.stage || "--";
   card.querySelector(".venue").textContent = game.venue || "--";
 
@@ -471,6 +479,7 @@ if (typeof module !== "undefined") {
     buildScoreboardUrl,
     filterGames,
     gameMatchesQuery,
+    getMatchDisplayValue,
     getStatusLabel,
     mapEspnEvent,
     mapEspnScoreboard,
