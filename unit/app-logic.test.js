@@ -7,6 +7,7 @@ const {
   buildScoreboardUrl,
   filterGames,
   gameMatchesQuery,
+  getMatchDisplayValue,
   getStatusLabel,
   mapEspnScoreboard,
   normalizeText,
@@ -149,6 +150,33 @@ test("search matches broadcasts without accents", () => {
 test("returns readable status labels", () => {
   assert.equal(getStatusLabel("live"), "Ao vivo");
   assert.equal(getStatusLabel("unknown"), "Programado");
+});
+
+test("shows kickoff time before the match and score after kickoff", () => {
+  assert.equal(
+    getMatchDisplayValue({
+      status: "scheduled",
+      time: "16:00",
+      score: "0 x 0"
+    }),
+    "16:00"
+  );
+  assert.equal(
+    getMatchDisplayValue({
+      status: "live",
+      time: "16:00",
+      score: "1 x 0"
+    }),
+    "1 x 0"
+  );
+  assert.equal(
+    getMatchDisplayValue({
+      status: "finished",
+      time: "16:00",
+      score: "2 x 2"
+    }),
+    "2 x 2"
+  );
 });
 
 test("uses real ESPN league slugs including World Cup 2026", () => {
