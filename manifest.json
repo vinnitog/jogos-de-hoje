@@ -1,0 +1,19 @@
+{
+  "name": "Jogos de hoje",
+  "short_name": "Jogos",
+  "description": "Agenda dos jogos do dia e onde assistir.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4f7f3",
+  "theme_color": "#105c46",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
