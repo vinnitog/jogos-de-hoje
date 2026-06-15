@@ -69,6 +69,14 @@ Modelo de transmissao esperado:
 
 Para Brasileirao, Paulista, Libertadores e Copa do Brasil, manter a regra conservadora: usar apenas ESPN ou futuras fontes confiaveis por jogo, sem fallback inventado.
 
+Atualizacao automatica:
+
+- Jogos ao vivo: atualizar no maximo a cada 90 segundos.
+- Jogos do dia sem partida ao vivo: atualizar no maximo a cada 4 minutos.
+- Datas passadas/futuras: atualizar no maximo a cada 15 minutos.
+- Pausar auto-refresh quando o app estiver offline ou com a aba em segundo plano.
+- Clique manual em atualizar deve respeitar intervalo minimo para evitar spam na API.
+
 ## Motivo Da Stack
 
 Para PWA simples, mobile e offline, vanilla reduz build step e facilita deploy estatico.
