@@ -52,6 +52,23 @@ Observacao:
 
 A transmissao e exibida somente quando a fonte retornar canais/plataformas. Se a API nao informar transmissao brasileira, a interface deve mostrar "A confirmar pela fonte" para evitar dado inventado.
 
+Excecao documentada:
+
+Para `fifa.world` / Copa do Mundo 2026, o app pode incluir `CazeTV` como transmissao manual garantida no Brasil quando a ESPN nao retornar canais, pois a competicao tem regra de cobertura integral pela CazeTV. Outras transmissoes da Copa, como Globo/SporTV/SBT/N Sports/GE TV, so devem entrar quando vierem de fonte confiavel por jogo.
+
+Modelo de transmissao esperado:
+
+```json
+{
+  "name": "CazeTV",
+  "type": "streaming",
+  "guaranteed": true,
+  "source": "manual"
+}
+```
+
+Para Brasileirao, Paulista, Libertadores e Copa do Brasil, manter a regra conservadora: usar apenas ESPN ou futuras fontes confiaveis por jogo, sem fallback inventado.
+
 ## Motivo Da Stack
 
 Para PWA simples, mobile e offline, vanilla reduz build step e facilita deploy estatico.
