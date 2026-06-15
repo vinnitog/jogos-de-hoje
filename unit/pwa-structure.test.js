@@ -30,6 +30,10 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /<link rel="stylesheet" href="css\/app\.css">/);
   assert.match(html, /<script src="js\/app\.js" defer><\/script>/);
   assert.match(html, /id="source-label"/);
+  assert.match(html, /id="date-display"/);
+  assert.match(html, /id="calendar-grid"/);
+  assert.match(html, /id="auto-refresh-status"/);
+  assert.doesNotMatch(html, /type="date"/);
 });
 
 test("manifest is installable enough for static hosting", () => {
@@ -43,11 +47,18 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v4/);
+  assert.match(serviceWorker, /jogos-hoje-v5/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   for (const asset of ["index.html", "css/app.css", "js/app.js", "data/jogos.json"]) {
     assert.match(serviceWorker, new RegExp(asset.replace(".", "\\.")));
   }
+});
+
+test("competition filters wrap instead of using horizontal scroll", () => {
+  const css = read("css/app.css");
+
+  assert.match(css, /\.competition-tabs\s*{[^}]*display:\s*grid/s);
+  assert.doesNotMatch(css, /\.competition-tabs\s*{[^}]*overflow-x:\s*auto/s);
 });
 
 test("local fallback has no fake matches", () => {

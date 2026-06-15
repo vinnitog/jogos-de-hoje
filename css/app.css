@@ -168,9 +168,15 @@ button {
 }
 
 .filters {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.filter-row {
   display: grid;
   gap: 12px;
-  padding: 16px;
 }
 
 .field {
@@ -178,24 +184,171 @@ button {
   gap: 6px;
 }
 
-.field span {
+.date-field {
+  position: relative;
+}
+
+.field span,
+.filter-title {
   color: var(--color-muted);
   font-size: 0.8rem;
   font-weight: 700;
 }
 
-.field input {
+.field input,
+.date-display,
+.date-step {
   min-height: 48px;
-  width: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 0 12px;
   background: #ffffff;
   color: var(--color-text);
   font-size: 1rem;
 }
 
+.field input {
+  width: 100%;
+  padding: 0 12px;
+}
+
+.date-control {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  gap: 8px;
+}
+
+.date-step {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  background: var(--color-surface-strong);
+  color: var(--color-primary-dark);
+  font-size: 1.45rem;
+  font-weight: 800;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.date-step:hover {
+  background: #d8eadf;
+}
+
+.date-step:active {
+  transform: scale(0.96);
+}
+
+.date-display {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  min-width: 0;
+  padding: 6px 12px;
+  background: #ffffff;
+  text-align: left;
+}
+
+.date-display__day {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.date-display strong {
+  line-height: 1.15;
+}
+
+.date-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: min(22rem, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.date-popover[hidden] {
+  display: none;
+}
+
+.calendar-header {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.calendar-header strong {
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.calendar-header button,
+.today-button,
+.calendar-day {
+  min-height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #ffffff;
+  color: var(--color-primary-dark);
+  font-weight: 800;
+}
+
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendar-weekdays {
+  margin-bottom: 4px;
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.calendar-day {
+  min-width: 0;
+  padding: 0;
+}
+
+.calendar-day.is-muted {
+  color: #8a9990;
+  background: #f5f8f6;
+}
+
+.calendar-day.is-today {
+  border-color: var(--color-accent);
+}
+
+.calendar-day.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.today-button {
+  width: 100%;
+  margin-top: 10px;
+  background: var(--color-surface-strong);
+}
+
+.competition-field {
+  display: grid;
+  gap: 8px;
+}
+
 .field input:focus,
+.date-step:focus-visible,
+.date-display:focus-visible,
+.calendar-header button:focus-visible,
+.calendar-day:focus-visible,
+.today-button:focus-visible,
 .tab-button:focus-visible,
 .icon-button:focus-visible {
   outline: 3px solid rgba(242, 193, 78, 0.52);
@@ -203,22 +356,26 @@ button {
 }
 
 .competition-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
   gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
 }
 
 .tab-button {
+  display: inline-flex;
   min-height: 44px;
-  flex: 0 0 auto;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding: 0 14px;
+  padding: 8px 14px;
   background: #ffffff;
   color: var(--color-primary-dark);
   font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
 }
 
 .tab-button[aria-selected="true"] {
@@ -240,11 +397,40 @@ button {
   color: var(--color-text);
 }
 
-.source-pill {
+.source-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.source-pill {
   padding: 3px 9px;
   background: #fff4d5;
   color: #5b4300;
+}
+
+.auto-refresh-status {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #edf2ff;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.auto-refresh-status.is-live {
+  background: #fee4e2;
+  color: var(--color-danger);
+}
+
+.auto-refresh-status.is-paused {
+  background: #edf0ef;
+  color: #475467;
 }
 
 .icon-button {
@@ -443,27 +629,13 @@ button {
     align-items: center;
   }
 
-  .filters {
-    grid-template-columns: 12rem minmax(18rem, 1fr);
+  .filter-row {
+    grid-template-columns: minmax(14rem, 0.7fr) minmax(18rem, 1fr);
     align-items: end;
-  }
-
-  .competition-tabs {
-    grid-column: 1 / -1;
   }
 
   .game-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1040px) {
-  .filters {
-    grid-template-columns: 12rem 1fr minmax(25rem, 1.1fr);
-  }
-
-  .competition-tabs {
-    grid-column: auto;
   }
 }
 
