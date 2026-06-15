@@ -1,4 +1,4 @@
-const CACHE_NAME = "jogos-hoje-v1";
+const CACHE_NAME = "jogos-hoje-v2";
 const APP_SHELL = [
   ".",
   "index.html",
@@ -34,6 +34,19 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.url.includes("/data/")) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  if (request.url.includes("site.api.espn.com/apis/site/v2/sports/soccer")) {
     event.respondWith(
       fetch(request)
         .then((response) => {

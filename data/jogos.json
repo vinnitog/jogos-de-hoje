@@ -1,57 +1,8 @@
 {
-  "updatedAt": "2026-06-15T16:26:00-03:00",
+  "updatedAt": null,
   "source": {
-    "label": "Dados demonstrativos",
-    "type": "sample"
+    "label": "Sem dados offline",
+    "type": "offline"
   },
-  "games": [
-    {
-      "id": "demo-bra-001",
-      "competition": "Brasileirão Série A",
-      "stage": "Rodada",
-      "date": "2026-06-15",
-      "time": "19:00",
-      "home": "Palmeiras",
-      "away": "Flamengo",
-      "venue": "Allianz Parque, São Paulo",
-      "status": "scheduled",
-      "broadcasts": ["Globo", "Premiere"]
-    },
-    {
-      "id": "demo-cdb-001",
-      "competition": "Copa do Brasil",
-      "stage": "Oitavas de final",
-      "date": "2026-06-15",
-      "time": "21:30",
-      "home": "Cruzeiro",
-      "away": "Athletico-PR",
-      "venue": "Mineirão, Belo Horizonte",
-      "status": "scheduled",
-      "broadcasts": ["SporTV", "Premiere"]
-    },
-    {
-      "id": "demo-lib-001",
-      "competition": "Libertadores",
-      "stage": "Grupo",
-      "date": "2026-06-15",
-      "time": "21:00",
-      "home": "São Paulo",
-      "away": "Nacional",
-      "venue": "Morumbis, São Paulo",
-      "status": "live",
-      "broadcasts": ["ESPN", "Disney+"]
-    },
-    {
-      "id": "demo-pau-001",
-      "competition": "Paulista Série A1",
-      "stage": "Primeira fase",
-      "date": "2026-06-16",
-      "time": "20:00",
-      "home": "Santos",
-      "away": "Ponte Preta",
-      "venue": "Vila Belmiro, Santos",
-      "status": "scheduled",
-      "broadcasts": ["Record", "Paulistão Play"]
-    }
-  ]
+  "games": []
 }
