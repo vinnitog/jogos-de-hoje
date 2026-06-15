@@ -5,11 +5,15 @@ const {
   FALLBACK_DATA,
   LEAGUES,
   buildScoreboardUrl,
+  enrichBroadcastsForCompetition,
   filterGames,
   gameMatchesQuery,
+  getBroadcastName,
+  getNormalizedBroadcasts,
   getMatchDisplayValue,
   getStatusLabel,
   mapEspnScoreboard,
+  normalizeBroadcast,
   normalizeText,
   sortGamesByTime,
   summarizeGames
@@ -140,6 +144,72 @@ test("summarizes total, live games and broadcasts", () => {
   });
 });
 
+test("ignores empty broadcast entries", () => {
+  assert.deepEqual(getNormalizedBroadcasts(["", null, { name: "SporTV" }]), [
+    {
+      name: "SporTV",
+      type: "unknown",
+      guaranteed: false,
+      source: "api"
+    }
+  ]);
+
+  assert.equal(
+    summarizeGames([{ status: "scheduled", broadcasts: ["", null] }]).withBroadcast,
+    0
+  );
+});
+
+test("normalizes string and object broadcasts", () => {
+  assert.deepEqual(normalizeBroadcast("ESPN", { source: "espn" }), {
+    name: "ESPN",
+    type: "unknown",
+    guaranteed: false,
+    source: "espn"
+  });
+
+  assert.deepEqual(
+    normalizeBroadcast({
+      name: "CazéTV",
+      type: "streaming",
+      guaranteed: true,
+      source: "manual"
+    }),
+    {
+      name: "CazéTV",
+      type: "streaming",
+      guaranteed: true,
+      source: "manual"
+    }
+  );
+});
+
+test("adds CazéTV as guaranteed World Cup 2026 fallback only", () => {
+  const worldCupBroadcasts = enrichBroadcastsForCompetition("Copa do Mundo 2026", []);
+  const brasileiraoBroadcasts = enrichBroadcastsForCompetition("Brasileirão Série A", []);
+
+  assert.deepEqual(worldCupBroadcasts, [
+    {
+      name: "CazéTV",
+      type: "streaming",
+      guaranteed: true,
+      source: "manual"
+    }
+  ]);
+  assert.deepEqual(brasileiraoBroadcasts, []);
+});
+
+test("deduplicates World Cup fallback with source broadcasts", () => {
+  const broadcasts = enrichBroadcastsForCompetition("Copa do Mundo 2026", [
+    "CazéTV",
+    "Globo"
+  ]);
+
+  assert.deepEqual(broadcasts.map(getBroadcastName), ["CazéTV", "Globo"]);
+  assert.equal(broadcasts[0].guaranteed, true);
+  assert.equal(broadcasts[0].type, "streaming");
+});
+
 test("search matches broadcasts without accents", () => {
   const game = TEST_GAMES.find((item) => item.home === "São Paulo");
 
@@ -215,7 +285,13 @@ test("maps ESPN scoreboard events to app games", () => {
   assert.equal(games[0].away, "Cabo Verde");
   assert.equal(games[0].status, "finished");
   assert.equal(games[0].score, "0 x 0");
-  assert.deepEqual(games[0].broadcasts, ["FOX", "Tele", "Peacock"]);
+  assert.deepEqual(games[0].broadcasts.map(getBroadcastName), [
+    "FOX",
+    "Tele",
+    "Peacock",
+    "CazéTV"
+  ]);
+  assert.equal(games[0].broadcasts.at(-1).guaranteed, true);
 });
 
 test("fallback data does not include demonstrative matches", () => {
