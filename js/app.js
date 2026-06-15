@@ -2,6 +2,13 @@ const STORAGE_KEY = "jogos-hoje-cache-v2";
 const DATA_URL = "data/jogos.json";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
+const AUTO_REFRESH_INTERVALS = {
+  live: 90_000,
+  today: 240_000,
+  otherDate: 900_000,
+  minManual: 30_000
+};
+const WEEKDAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const WORLD_CUP_2026 = "Copa do Mundo 2026";
 const WORLD_CUP_2026_DEFAULT_BROADCAST = {
   name: "CazéTV",
@@ -45,8 +52,16 @@ const FALLBACK_DATA = {
 const state = {
   data: FALLBACK_DATA,
   selectedDate: getTodayISO(),
+  calendarMonthDate: getTodayISO(),
   selectedCompetition: "Todos",
   query: ""
+};
+
+const refreshRuntime = {
+  timerId: null,
+  inFlight: false,
+  lastStartedAt: 0,
+  pendingOptions: null
 };
 
 function getTodayISO(date = new Date()) {
@@ -54,6 +69,81 @@ function getTodayISO(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function parseDateISO(dateISO) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateISO || ""));
+
+  if (!match) {
+    return parseDateISO(getTodayISO());
+  }
+
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function toDateISO(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function shiftDateISO(dateISO, days) {
+  const date = parseDateISO(dateISO);
+  date.setDate(date.getDate() + days);
+  return toDateISO(date);
+}
+
+function getMonthStartISO(dateISO) {
+  const date = parseDateISO(dateISO);
+  return toDateISO(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+function capitalizeFirst(value) {
+  return String(value || "").charAt(0).toUpperCase() + String(value || "").slice(1);
+}
+
+function formatDateDisplayParts(dateISO, todayISO = getTodayISO()) {
+  const date = parseDateISO(dateISO);
+  const dateLabel = new Intl.DateTimeFormat("pt-BR").format(date);
+  let dayLabel = capitalizeFirst(
+    new Intl.DateTimeFormat("pt-BR", { weekday: "long" }).format(date)
+  );
+
+  if (dateISO === todayISO) {
+    dayLabel = "Hoje";
+  } else if (dateISO === shiftDateISO(todayISO, -1)) {
+    dayLabel = "Ontem";
+  } else if (dateISO === shiftDateISO(todayISO, 1)) {
+    dayLabel = "Amanhã";
+  }
+
+  return {
+    dayLabel,
+    dateLabel
+  };
+}
+
+function getCalendarDays(monthDateISO, selectedDateISO, todayISO = getTodayISO()) {
+  const monthDate = parseDateISO(monthDateISO);
+  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    const iso = toDateISO(date);
+
+    return {
+      iso,
+      day: date.getDate(),
+      currentMonth: date.getMonth() === monthDate.getMonth(),
+      selected: iso === selectedDateISO,
+      today: iso === todayISO,
+      weekday: WEEKDAY_LABELS[date.getDay()]
+    };
+  });
 }
 
 function getDateISOInTimeZone(value, timeZone = TIME_ZONE) {
@@ -220,6 +310,30 @@ function summarizeGames(games) {
       getNormalizedBroadcasts(game.broadcasts).length > 0
     ).length
   };
+}
+
+function hasLiveGamesOnDate(games, dateISO) {
+  return games.some((game) => game.date === dateISO && game.status === "live");
+}
+
+function getAutoRefreshInterval(dateISO, games, todayISO = getTodayISO()) {
+  if (hasLiveGamesOnDate(games, dateISO)) {
+    return AUTO_REFRESH_INTERVALS.live;
+  }
+
+  if (dateISO === todayISO) {
+    return AUTO_REFRESH_INTERVALS.today;
+  }
+
+  return AUTO_REFRESH_INTERVALS.otherDate;
+}
+
+function formatRefreshInterval(milliseconds) {
+  if (milliseconds < 120_000) {
+    return `${Math.round(milliseconds / 1000)}s`;
+  }
+
+  return `${Math.round(milliseconds / 60_000)} min`;
 }
 
 function formatDateTime(value) {
@@ -409,6 +523,153 @@ function setText(selector, text) {
   }
 }
 
+function setDatePopoverOpen(isOpen) {
+  const popover = document.querySelector("#date-popover");
+  const display = document.querySelector("#date-display");
+
+  if (!popover || !display) {
+    return;
+  }
+
+  popover.hidden = !isOpen;
+  display.setAttribute("aria-expanded", String(isOpen));
+
+  if (isOpen) {
+    renderCalendar();
+  }
+}
+
+function renderDatePicker() {
+  const display = document.querySelector("#date-display");
+  const parts = formatDateDisplayParts(state.selectedDate);
+
+  setText("#date-display-day", parts.dayLabel);
+  setText("#date-display-date", parts.dateLabel);
+
+  if (display) {
+    display.setAttribute("aria-label", `Data selecionada: ${parts.dayLabel}, ${parts.dateLabel}`);
+  }
+
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const grid = document.querySelector("#calendar-grid");
+  const monthLabel = document.querySelector("#calendar-month-label");
+
+  if (!grid || !monthLabel) {
+    return;
+  }
+
+  const monthDate = parseDateISO(state.calendarMonthDate);
+  monthLabel.textContent = capitalizeFirst(
+    new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(monthDate)
+  );
+  grid.textContent = "";
+
+  getCalendarDays(state.calendarMonthDate, state.selectedDate).forEach((day) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "calendar-day";
+    button.textContent = String(day.day);
+    button.classList.toggle("is-muted", !day.currentMonth);
+    button.classList.toggle("is-selected", day.selected);
+    button.classList.toggle("is-today", day.today);
+    button.setAttribute("aria-label", `${day.weekday}, ${formatDateDisplayParts(day.iso).dateLabel}`);
+    button.addEventListener("click", async () => {
+      setDatePopoverOpen(false);
+      await updateSelectedDate(day.iso);
+    });
+    grid.append(button);
+  });
+}
+
+function setCalendarMonthOffset(offset) {
+  const date = parseDateISO(state.calendarMonthDate);
+  date.setMonth(date.getMonth() + offset, 1);
+  state.calendarMonthDate = toDateISO(date);
+  renderCalendar();
+}
+
+async function updateSelectedDate(dateISO) {
+  state.selectedDate = dateISO || getTodayISO();
+  state.calendarMonthDate = getMonthStartISO(state.selectedDate);
+  renderDatePicker();
+  await refreshData({ reason: "date-change", force: true });
+}
+
+function clearAutoRefreshTimer() {
+  if (refreshRuntime.timerId && typeof window !== "undefined") {
+    window.clearTimeout(refreshRuntime.timerId);
+  }
+
+  refreshRuntime.timerId = null;
+}
+
+function canAutoRefresh() {
+  return (
+    typeof window !== "undefined" &&
+    (!("onLine" in navigator) || navigator.onLine) &&
+    (typeof document === "undefined" || !document.hidden)
+  );
+}
+
+function renderAutoRefreshStatus() {
+  const element = document.querySelector("#auto-refresh-status");
+  if (!element) {
+    return;
+  }
+
+  const games = state.data.games || [];
+  const hasLiveGame = hasLiveGamesOnDate(games, state.selectedDate);
+  const interval = getAutoRefreshInterval(state.selectedDate, games);
+
+  element.classList.toggle("is-live", hasLiveGame);
+  element.classList.toggle("is-paused", !canAutoRefresh());
+
+  if (refreshRuntime.inFlight) {
+    element.textContent = "Auto: atualizando";
+  } else if (!navigator.onLine) {
+    element.textContent = "Auto: offline";
+  } else if (document.hidden) {
+    element.textContent = "Auto: pausado";
+  } else {
+    element.textContent = hasLiveGame
+      ? `Ao vivo: ${formatRefreshInterval(interval)}`
+      : `Auto: ${formatRefreshInterval(interval)}`;
+  }
+}
+
+function scheduleAutoRefresh() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  clearAutoRefreshTimer();
+  renderAutoRefreshStatus();
+
+  if (!canAutoRefresh()) {
+    return;
+  }
+
+  const interval = getAutoRefreshInterval(state.selectedDate, state.data.games || []);
+  refreshRuntime.timerId = window.setTimeout(() => {
+    refreshData({ reason: "auto" });
+  }, interval);
+}
+
+function refreshWhenDue(reason) {
+  const interval = getAutoRefreshInterval(state.selectedDate, state.data.games || []);
+  const elapsed = Date.now() - refreshRuntime.lastStartedAt;
+
+  if (!refreshRuntime.lastStartedAt || elapsed >= interval) {
+    refreshData({ reason, force: true });
+    return;
+  }
+
+  scheduleAutoRefresh();
+}
+
 function createBroadcastChip(channel) {
   const broadcast = normalizeBroadcast(channel);
   const chip = document.createElement("span");
@@ -505,34 +766,95 @@ function renderConnectionStatus() {
 
 function renderApp() {
   renderCompetitionTabs();
+  renderDatePicker();
   const filteredGames = filterGames(state.data.games || [], state);
   renderGames(filteredGames);
   renderSummary(filteredGames);
   renderConnectionStatus();
+  renderAutoRefreshStatus();
   setText("#updated-at", formatDateTime(state.data.updatedAt));
   setText("#source-label", state.data.source?.label || "Fonte não informada");
 }
 
-async function refreshData() {
+async function refreshData(options = {}) {
+  const reason = options.reason || "manual";
+  const force = Boolean(options.force);
   const button = document.querySelector("#refresh-button");
+  const now = Date.now();
+
+  if (refreshRuntime.inFlight) {
+    if (force || reason === "date-change") {
+      refreshRuntime.pendingOptions = { force: true, reason };
+    }
+    return state.data;
+  }
+
+  if (
+    !force &&
+    reason === "manual" &&
+    refreshRuntime.lastStartedAt &&
+    now - refreshRuntime.lastStartedAt < AUTO_REFRESH_INTERVALS.minManual
+  ) {
+    renderAutoRefreshStatus();
+    return state.data;
+  }
+
+  clearAutoRefreshTimer();
+  refreshRuntime.inFlight = true;
+  refreshRuntime.lastStartedAt = now;
   button?.classList.add("is-loading");
-  state.data = await loadGamesData();
-  button?.classList.remove("is-loading");
-  renderApp();
+
+  try {
+    state.data = await loadGamesData();
+    return state.data;
+  } finally {
+    const pendingOptions = refreshRuntime.pendingOptions;
+    refreshRuntime.pendingOptions = null;
+    refreshRuntime.inFlight = false;
+    button?.classList.remove("is-loading");
+    renderApp();
+    if (pendingOptions) {
+      refreshData(pendingOptions);
+    } else {
+      scheduleAutoRefresh();
+    }
+  }
 }
 
 function bindEvents() {
-  const dateFilter = document.querySelector("#date-filter");
+  const datePicker = document.querySelector("#date-picker");
+  const dateDisplay = document.querySelector("#date-display");
+  const datePrev = document.querySelector("#date-prev");
+  const dateNext = document.querySelector("#date-next");
+  const dateToday = document.querySelector("#date-today");
+  const prevMonth = document.querySelector("#calendar-prev-month");
+  const nextMonth = document.querySelector("#calendar-next-month");
   const searchFilter = document.querySelector("#search-filter");
   const refreshButton = document.querySelector("#refresh-button");
 
-  if (dateFilter) {
-    dateFilter.value = state.selectedDate;
-    dateFilter.addEventListener("change", async () => {
-      state.selectedDate = dateFilter.value || getTodayISO();
-      await refreshData();
-    });
-  }
+  datePrev?.addEventListener("click", () => updateSelectedDate(shiftDateISO(state.selectedDate, -1)));
+  dateNext?.addEventListener("click", () => updateSelectedDate(shiftDateISO(state.selectedDate, 1)));
+  dateToday?.addEventListener("click", () => {
+    setDatePopoverOpen(false);
+    updateSelectedDate(getTodayISO());
+  });
+  dateDisplay?.addEventListener("click", () => {
+    const popover = document.querySelector("#date-popover");
+    setDatePopoverOpen(Boolean(popover?.hidden));
+  });
+  prevMonth?.addEventListener("click", () => setCalendarMonthOffset(-1));
+  nextMonth?.addEventListener("click", () => setCalendarMonthOffset(1));
+
+  document.addEventListener("click", (event) => {
+    if (datePicker && !datePicker.contains(event.target)) {
+      setDatePopoverOpen(false);
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setDatePopoverOpen(false);
+    }
+  });
 
   if (searchFilter) {
     searchFilter.addEventListener("input", () => {
@@ -541,15 +863,28 @@ function bindEvents() {
     });
   }
 
-  refreshButton?.addEventListener("click", refreshData);
-  window.addEventListener("online", renderConnectionStatus);
-  window.addEventListener("offline", renderConnectionStatus);
+  refreshButton?.addEventListener("click", () => refreshData({ reason: "manual" }));
+  window.addEventListener("online", () => refreshWhenDue("online"));
+  window.addEventListener("offline", () => {
+    clearAutoRefreshTimer();
+    renderConnectionStatus();
+    renderAutoRefreshStatus();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearAutoRefreshTimer();
+      renderAutoRefreshStatus();
+      return;
+    }
+
+    refreshWhenDue("visible");
+  });
 }
 
 async function initApp() {
   bindEvents();
   renderApp();
-  await refreshData();
+  await refreshData({ reason: "initial", force: true });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js");
@@ -562,22 +897,29 @@ if (typeof document !== "undefined") {
 
 if (typeof module !== "undefined") {
   module.exports = {
+    AUTO_REFRESH_INTERVALS,
     COMPETITIONS,
     FALLBACK_DATA,
     LEAGUES,
     buildScoreboardUrl,
+    formatDateDisplayParts,
+    formatRefreshInterval,
     filterGames,
     gameMatchesQuery,
+    getAutoRefreshInterval,
     getMatchDisplayValue,
     getStatusLabel,
     mapEspnEvent,
     mapEspnScoreboard,
+    getCalendarDays,
+    getMonthStartISO,
     getTodayISO,
     enrichBroadcastsForCompetition,
     getBroadcastName,
     getNormalizedBroadcasts,
     normalizeText,
     normalizeBroadcast,
+    shiftDateISO,
     sortGamesByTime,
     summarizeGames
   };
