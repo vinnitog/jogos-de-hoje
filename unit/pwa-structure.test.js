@@ -43,7 +43,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v3/);
+  assert.match(serviceWorker, /jogos-hoje-v4/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   for (const asset of ["index.html", "css/app.css", "js/app.js", "data/jogos.json"]) {
     assert.match(serviceWorker, new RegExp(asset.replace(".", "\\.")));

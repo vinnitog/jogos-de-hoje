@@ -2,6 +2,13 @@ const STORAGE_KEY = "jogos-hoje-cache-v2";
 const DATA_URL = "data/jogos.json";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
+const WORLD_CUP_2026 = "Copa do Mundo 2026";
+const WORLD_CUP_2026_DEFAULT_BROADCAST = {
+  name: "CazéTV",
+  type: "streaming",
+  guaranteed: true,
+  source: "manual"
+};
 const LEAGUES = [
   {
     name: "Brasileirão Série A",
@@ -20,7 +27,7 @@ const LEAGUES = [
     slug: "bra.copa_do_brazil"
   },
   {
-    name: "Copa do Mundo 2026",
+    name: WORLD_CUP_2026,
     slug: "fifa.world"
   }
 ];
@@ -110,10 +117,83 @@ function gameMatchesQuery(game, query) {
     game.away,
     game.venue,
     game.competition,
-    ...(game.broadcasts || [])
+    ...(game.broadcasts || []).map(getBroadcastName)
   ].join(" ");
 
   return normalizeText(searchable).includes(normalizedQuery);
+}
+
+function getBroadcastName(broadcast) {
+  if (typeof broadcast === "string") {
+    return broadcast;
+  }
+
+  return broadcast?.name || "";
+}
+
+function normalizeBroadcast(broadcast, defaults = {}) {
+  const name = getBroadcastName(broadcast).trim();
+
+  if (!name) {
+    return null;
+  }
+
+  return {
+    name,
+    type: broadcast?.type || defaults.type || "unknown",
+    guaranteed: Boolean(broadcast?.guaranteed ?? defaults.guaranteed),
+    source: broadcast?.source || defaults.source || "api"
+  };
+}
+
+function getNormalizedBroadcasts(broadcasts = []) {
+  return broadcasts.map((broadcast) => normalizeBroadcast(broadcast)).filter(Boolean);
+}
+
+function mergeBroadcasts(broadcasts) {
+  const broadcastsByName = new Map();
+
+  broadcasts.forEach((broadcast) => {
+    const normalized = normalizeBroadcast(broadcast);
+
+    if (!normalized) {
+      return;
+    }
+
+    const key = normalizeText(normalized.name);
+    const current = broadcastsByName.get(key);
+
+    if (!current) {
+      broadcastsByName.set(key, normalized);
+      return;
+    }
+
+    broadcastsByName.set(key, {
+      ...current,
+      type: current.type !== "unknown" ? current.type : normalized.type,
+      guaranteed: current.guaranteed || normalized.guaranteed,
+      source: current.source === "api" ? current.source : normalized.source
+    });
+  });
+
+  return [...broadcastsByName.values()];
+}
+
+function getDefaultBroadcastsForCompetition(competition) {
+  if (competition === WORLD_CUP_2026) {
+    return [WORLD_CUP_2026_DEFAULT_BROADCAST];
+  }
+
+  return [];
+}
+
+function enrichBroadcastsForCompetition(competition, broadcasts = []) {
+  const sourceBroadcasts = broadcasts.map((broadcast) =>
+    normalizeBroadcast(broadcast, { source: "espn" })
+  );
+  const defaultBroadcasts = getDefaultBroadcastsForCompetition(competition);
+
+  return mergeBroadcasts([...sourceBroadcasts, ...defaultBroadcasts]);
 }
 
 function filterGames(games, filters) {
@@ -136,7 +216,9 @@ function summarizeGames(games) {
   return {
     total: games.length,
     live: games.filter((game) => game.status === "live").length,
-    withBroadcast: games.filter((game) => (game.broadcasts || []).length > 0).length
+    withBroadcast: games.filter((game) =>
+      getNormalizedBroadcasts(game.broadcasts).length > 0
+    ).length
   };
 }
 
@@ -236,7 +318,7 @@ function mapEspnEvent(event, league) {
     venue: formatVenue(competition.venue || event.venue),
     status,
     score,
-    broadcasts: extractBroadcasts(competition),
+    broadcasts: enrichBroadcastsForCompetition(league.name, extractBroadcasts(competition)),
     sourceUrl: event.links?.find((link) => link.rel?.includes("summary"))?.href || ""
   };
 }
@@ -328,9 +410,15 @@ function setText(selector, text) {
 }
 
 function createBroadcastChip(channel) {
+  const broadcast = normalizeBroadcast(channel);
   const chip = document.createElement("span");
   chip.className = "broadcast-chip";
-  chip.textContent = channel;
+  chip.textContent = broadcast.name;
+  chip.classList.toggle("is-guaranteed", broadcast.guaranteed);
+  chip.dataset.type = broadcast.type;
+  chip.title = broadcast.guaranteed
+    ? `${broadcast.name} - transmissão confirmada para esta competição`
+    : `${broadcast.name} - informado pela fonte`;
   return chip;
 }
 
@@ -361,6 +449,7 @@ function renderGameCard(game) {
   const card = template.content.firstElementChild.cloneNode(true);
   const status = card.querySelector(".status");
   const broadcasts = card.querySelector(".broadcasts");
+  const gameBroadcasts = getNormalizedBroadcasts(game.broadcasts);
 
   card.querySelector(".competition").textContent = game.competition;
   status.textContent = getStatusLabel(game.status);
@@ -373,10 +462,10 @@ function renderGameCard(game) {
   card.querySelector(".venue").textContent = game.venue || "--";
 
   broadcasts.textContent = "";
-  if ((game.broadcasts || []).length === 0) {
+  if (gameBroadcasts.length === 0) {
     broadcasts.textContent = "A confirmar pela fonte";
   } else {
-    game.broadcasts.forEach((channel) => broadcasts.append(createBroadcastChip(channel)));
+    gameBroadcasts.forEach((channel) => broadcasts.append(createBroadcastChip(channel)));
   }
 
   return card;
@@ -484,7 +573,11 @@ if (typeof module !== "undefined") {
     mapEspnEvent,
     mapEspnScoreboard,
     getTodayISO,
+    enrichBroadcastsForCompetition,
+    getBroadcastName,
+    getNormalizedBroadcasts,
     normalizeText,
+    normalizeBroadcast,
     sortGamesByTime,
     summarizeGames
   };
