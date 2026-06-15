@@ -6,6 +6,7 @@ const {
   FALLBACK_DATA,
   LEAGUES,
   buildScoreboardUrl,
+  detectGoalEvents,
   enrichBroadcastsForCompetition,
   filterGames,
   formatDateDisplayParts,
@@ -21,6 +22,7 @@ const {
   mapEspnScoreboard,
   normalizeBroadcast,
   normalizeText,
+  parseScore,
   shiftDateISO,
   sortGamesByTime,
   summarizeGames
@@ -288,6 +290,260 @@ test("shows kickoff time before the match and score after kickoff", () => {
       score: "2 x 2"
     }),
     "2 x 2"
+  );
+});
+
+test("parses score strings for goal detection", () => {
+  assert.deepEqual(parseScore("2 x 1"), {
+    home: 2,
+    away: 1,
+    total: 3
+  });
+  assert.deepEqual(parseScore(" 10 X 2 "), {
+    home: 10,
+    away: 2,
+    total: 12
+  });
+  assert.equal(parseScore("16:00"), null);
+  assert.equal(parseScore("Palmeiras 1 x 0 Flamengo"), null);
+  assert.equal(parseScore("1-0"), null);
+});
+
+test("detects goal notifications only when the score increases", () => {
+  const previousGames = [
+    {
+      id: "bra.1-1",
+      competition: "Brasileirao Serie A",
+      date: "2026-06-15",
+      home: "Palmeiras",
+      away: "Flamengo",
+      status: "live",
+      score: "0 x 0"
+    },
+    {
+      id: "bra.1-2",
+      competition: "Brasileirao Serie A",
+      date: "2026-06-15",
+      home: "Santos",
+      away: "Bahia",
+      status: "live",
+      score: "1 x 1"
+    }
+  ];
+  const nextGames = [
+    {
+      ...previousGames[0],
+      score: "1 x 0"
+    },
+    {
+      ...previousGames[1],
+      score: "1 x 1"
+    }
+  ];
+
+  const events = detectGoalEvents(previousGames, nextGames);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].title, "Gol do Palmeiras!");
+  assert.equal(events[0].body, "Brasileirao Serie A: Palmeiras 1 x 0 Flamengo");
+});
+
+test("detects away team and multiple goal notification events", () => {
+  const previousGames = [
+    {
+      id: "bra.1-1",
+      competition: "Brasileirao Serie A",
+      date: "2026-06-15",
+      home: "Palmeiras",
+      away: "Flamengo",
+      status: "live",
+      score: "0 x 0"
+    },
+    {
+      id: "lib-1",
+      competition: "Libertadores",
+      date: "2026-06-15",
+      home: "Sao Paulo",
+      away: "Nacional",
+      status: "live",
+      score: "1 x 1"
+    }
+  ];
+
+  const events = detectGoalEvents(previousGames, [
+    {
+      ...previousGames[0],
+      score: "0 x 2"
+    },
+    {
+      ...previousGames[1],
+      score: "2 x 2"
+    }
+  ]);
+
+  assert.equal(events.length, 2);
+  assert.equal(events[0].title, "Gols do Flamengo!");
+  assert.deepEqual(events[0].scoringTeams, ["Flamengo"]);
+  assert.equal(events[0].goalCount, 2);
+  assert.equal(events[1].title, "Gols na partida!");
+  assert.deepEqual(events[1].scoringTeams, ["Sao Paulo", "Nacional"]);
+});
+
+test("does not notify goals for first load or non-live games", () => {
+  assert.deepEqual(
+    detectGoalEvents([], [
+      {
+        id: "bra.1-1",
+        competition: "Brasileirao Serie A",
+        date: "2026-06-15",
+        home: "Palmeiras",
+        away: "Flamengo",
+        status: "live",
+        score: "1 x 0"
+      }
+    ]),
+    []
+  );
+
+  assert.deepEqual(
+    detectGoalEvents(
+      [
+        {
+          id: "bra.1-1",
+          competition: "Brasileirao Serie A",
+          date: "2026-06-15",
+          home: "Palmeiras",
+          away: "Flamengo",
+          status: "scheduled",
+          score: ""
+        }
+      ],
+      [
+        {
+          id: "bra.1-1",
+          competition: "Brasileirao Serie A",
+          date: "2026-06-15",
+          home: "Palmeiras",
+          away: "Flamengo",
+          status: "scheduled",
+          score: "1 x 0"
+        }
+      ]
+    ),
+    []
+  );
+});
+
+test("matches goal events without ids by normalized game identity", () => {
+  const previousGame = {
+    competition: "Brasileirao Serie A",
+    date: "2026-06-15",
+    home: "Sao Paulo",
+    away: "Bahia",
+    status: "live",
+    score: "0 x 0"
+  };
+  const events = detectGoalEvents(
+    [previousGame],
+    [
+      {
+        ...previousGame,
+        home: "SÃO PAULO",
+        score: "1 x 0"
+      }
+    ]
+  );
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].title, "Gol do SÃO PAULO!");
+});
+
+test("does not mix equal teams from different dates or competitions", () => {
+  const game = {
+    competition: "Brasileirao Serie A",
+    date: "2026-06-15",
+    home: "Palmeiras",
+    away: "Flamengo",
+    status: "live",
+    score: "0 x 0"
+  };
+
+  assert.deepEqual(
+    detectGoalEvents(
+      [game],
+      [
+        {
+          ...game,
+          date: "2026-06-16",
+          score: "1 x 0"
+        },
+        {
+          ...game,
+          competition: "Copa do Brasil",
+          score: "1 x 0"
+        }
+      ]
+    ),
+    []
+  );
+});
+
+test("detects goals from live to finished status", () => {
+  const game = {
+    id: "bra.1-1",
+    competition: "Brasileirao Serie A",
+    date: "2026-06-15",
+    home: "Palmeiras",
+    away: "Flamengo",
+    score: "0 x 0"
+  };
+  const events = detectGoalEvents(
+    [
+      {
+        ...game,
+        status: "live"
+      }
+    ],
+    [
+      {
+        ...game,
+        status: "finished",
+        score: "0 x 1"
+      }
+    ]
+  );
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].title, "Gol do Flamengo!");
+  assert.equal(events[0].score, "0 x 1");
+});
+
+test("does not notify when a scoreboard correction lowers one side", () => {
+  const game = {
+    id: "bra.1-1",
+    competition: "Brasileirao Serie A",
+    date: "2026-06-15",
+    home: "Palmeiras",
+    away: "Flamengo",
+    status: "live"
+  };
+
+  assert.deepEqual(
+    detectGoalEvents(
+      [
+        {
+          ...game,
+          score: "2 x 1"
+        }
+      ],
+      [
+        {
+          ...game,
+          score: "1 x 3"
+        }
+      ]
+    ),
+    []
   );
 });
 
