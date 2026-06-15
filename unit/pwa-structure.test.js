@@ -33,7 +33,18 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /id="date-display"/);
   assert.match(html, /id="calendar-grid"/);
   assert.match(html, /id="auto-refresh-status"/);
+  assert.match(html, /id="goal-notifications-toggle"/);
   assert.doesNotMatch(html, /type="date"/);
+});
+
+test("goal notification toggle is accessible and linked to status text", () => {
+  const html = read("index.html");
+
+  assert.match(html, /id="goal-notifications-toggle"[\s\S]*role="switch"/);
+  assert.match(html, /id="goal-notifications-toggle"[\s\S]*aria-describedby="goal-notification-status"/);
+  assert.match(html, /id="goal-notifications-toggle"[\s\S]*aria-label="Notificacoes de gol"/);
+  assert.match(html, /id="goal-notification-status"/);
+  assert.doesNotMatch(html, /id="goal-notification-status"[^>]*aria-live/);
 });
 
 test("manifest is installable enough for static hosting", () => {
@@ -47,11 +58,62 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v5/);
+  assert.match(serviceWorker, /jogos-hoje-v6/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
+  assert.match(serviceWorker, /notificationclick/);
+  assert.match(serviceWorker, /clients\.matchAll/);
+  assert.match(serviceWorker, /\.focus\(\)/);
+  assert.match(serviceWorker, /clients\.openWindow/);
   for (const asset of ["index.html", "css/app.css", "js/app.js", "data/jogos.json"]) {
     assert.match(serviceWorker, new RegExp(asset.replace(".", "\\.")));
   }
+});
+
+test("goal notification source persists preference and requests permission", () => {
+  const app = read("js/app.js");
+
+  assert.match(app, /GOAL_NOTIFICATIONS_STORAGE_KEY\s*=\s*"jogos-hoje-goal-notifications"/);
+  assert.match(app, /localStorage\.setItem\(GOAL_NOTIFICATIONS_STORAGE_KEY,\s*enabled \? "on" : "off"\)/);
+  assert.match(app, /Notification\.requestPermission\(\)/);
+  assert.match(app, /Notification\.permission === "granted"/);
+  assert.match(app, /Notification\.permission === "denied"/);
+});
+
+test("goal notification refresh compares previous and next games", () => {
+  const app = read("js/app.js");
+
+  assert.match(app, /const previousGames = state\.data\.games \|\| \[\]/);
+  assert.match(app, /notifyGoalEvents\(previousGames,\s*nextData\.games \|\| \[\]\)/);
+  assert.match(app, /state\.data = nextData/);
+});
+
+test("goal notification payload uses stable tag and app icons", () => {
+  const app = read("js/app.js");
+
+  assert.match(app, /tag:\s*`gol-\$\{goalEvent\.id\}-\$\{goalEvent\.score\}`/);
+  assert.match(app, /renotify:\s*true/);
+  assert.match(app, /icon:\s*"icons\/icon\.svg"/);
+  assert.match(app, /badge:\s*"icons\/icon\.svg"/);
+  assert.match(app, /data:\s*\{[\s\S]*url:\s*"."[\s\S]*\}/);
+});
+
+test("goal notification uses service worker with browser fallback", () => {
+  const app = read("js/app.js");
+
+  assert.match(app, /showServiceWorkerNotification\(goalEvent\.title,\s*options\)/);
+  assert.match(app, /createBrowserNotification\(goalEvent\.title,\s*options\)/);
+  assert.match(app, /NOTIFICATION_SERVICE_WORKER_TIMEOUT/);
+});
+
+test("notification click closes notification and returns to app", () => {
+  const serviceWorker = read("sw.js");
+
+  assert.match(serviceWorker, /event\.notification\.close\(\)/);
+  assert.match(
+    serviceWorker,
+    /clients\.matchAll\(\{\s*type:\s*"window",\s*includeUncontrolled:\s*true\s*\}\)/s
+  );
+  assert.match(serviceWorker, /clients\.openWindow\(event\.notification\.data\?\.url \|\| "\."\)/);
 });
 
 test("competition filters wrap instead of using horizontal scroll", () => {
