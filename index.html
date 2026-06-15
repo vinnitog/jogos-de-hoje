@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#105c46">
+    <meta name="description" content="Agenda mobile dos jogos do dia e onde assistir.">
+    <title>Jogos de hoje</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/app.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Agenda do futebol</p>
+          <h1>Jogos de hoje</h1>
+        </div>
+        <div class="connection-pill" id="connection-status" aria-live="polite">Online</div>
+      </header>
+
+      <main class="content">
+        <section class="scoreboard" aria-labelledby="summary-title">
+          <div>
+            <p class="eyebrow">Partidas filtradas</p>
+            <h2 id="summary-title">0 jogos</h2>
+          </div>
+          <div class="summary-grid" aria-label="Resumo dos jogos">
+            <div>
+              <span id="summary-live">0</span>
+              <small>ao vivo</small>
+            </div>
+            <div>
+              <span id="summary-tv">0</span>
+              <small>com transmissão</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="filters" aria-label="Filtros dos jogos">
+          <label class="field">
+            <span>Data</span>
+            <input id="date-filter" type="date">
+          </label>
+
+          <label class="field">
+            <span>Busca</span>
+            <input id="search-filter" type="search" placeholder="Time, estádio ou canal">
+          </label>
+
+          <div class="competition-tabs" id="competition-filter" role="tablist" aria-label="Campeonatos"></div>
+        </section>
+
+        <section class="list-header" aria-live="polite">
+          <div>
+            <p class="eyebrow">Atualizado em</p>
+            <strong id="updated-at">--</strong>
+            <span class="source-pill" id="source-label">--</span>
+          </div>
+          <button class="icon-button" id="refresh-button" type="button" aria-label="Atualizar jogos" title="Atualizar jogos">
+            <span aria-hidden="true">↻</span>
+          </button>
+        </section>
+
+        <section class="game-list" id="game-list" aria-label="Lista de jogos"></section>
+
+        <section class="empty-state" id="empty-state" hidden>
+          <div class="empty-visual" aria-hidden="true">
+            <span></span>
+          </div>
+          <h2>Nenhum jogo encontrado</h2>
+          <p>Altere a data, campeonato ou busca.</p>
+        </section>
+      </main>
+    </div>
+
+    <template id="game-card-template">
+      <article class="game-card">
+        <div class="game-card__meta">
+          <span class="competition"></span>
+          <span class="status"></span>
+        </div>
+        <div class="match-row">
+          <strong class="team home-team"></strong>
+          <span class="score-time"></span>
+          <strong class="team away-team"></strong>
+        </div>
+        <dl class="details">
+          <div>
+            <dt>Fase</dt>
+            <dd class="stage"></dd>
+          </div>
+          <div>
+            <dt>Local</dt>
+            <dd class="venue"></dd>
+          </div>
+          <div>
+            <dt>Onde assistir</dt>
+            <dd class="broadcasts"></dd>
+          </div>
+        </dl>
+      </article>
+    </template>
+
+    <script src="js/app.js" defer></script>
+  </body>
+</html>

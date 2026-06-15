@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Jogos de hoje">
+  <rect width="512" height="512" rx="96" fill="#105c46"/>
+  <path d="M96 128h320v256H96z" fill="#d8eadf"/>
+  <path d="M256 128v256M96 256h320" stroke="#105c46" stroke-width="18"/>
+  <circle cx="256" cy="256" r="64" fill="none" stroke="#105c46" stroke-width="18"/>
+  <circle cx="256" cy="256" r="42" fill="#ffffff" stroke="#17211d" stroke-width="16"/>
+  <path d="M256 214l38 28-15 45h-46l-15-45z" fill="#17211d"/>
+  <path d="M96 128h320v42H96zM96 342h320v42H96z" fill="#f2c14e"/>
+</svg>
