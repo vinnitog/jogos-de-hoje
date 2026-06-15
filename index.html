@@ -39,24 +39,73 @@
         </section>
 
         <section class="filters" aria-label="Filtros dos jogos">
-          <label class="field">
-            <span>Data</span>
-            <input id="date-filter" type="date">
-          </label>
+          <div class="filter-row">
+            <div class="field date-field" id="date-picker">
+              <span id="date-filter-label">Data</span>
+              <div class="date-control" aria-labelledby="date-filter-label">
+                <button class="date-step" id="date-prev" type="button" aria-label="Dia anterior" title="Dia anterior">
+                  <span aria-hidden="true">‹</span>
+                </button>
+                <button
+                  class="date-display"
+                  id="date-display"
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-labelledby="date-filter-label date-display-date"
+                >
+                  <span class="date-display__day" id="date-display-day">Hoje</span>
+                  <strong id="date-display-date">--/--/----</strong>
+                </button>
+                <button class="date-step" id="date-next" type="button" aria-label="Próximo dia" title="Próximo dia">
+                  <span aria-hidden="true">›</span>
+                </button>
+              </div>
 
-          <label class="field">
-            <span>Busca</span>
-            <input id="search-filter" type="search" placeholder="Time, estádio ou canal">
-          </label>
+              <div class="date-popover" id="date-popover" role="dialog" aria-label="Escolher data" hidden>
+                <div class="calendar-header">
+                  <button id="calendar-prev-month" type="button" aria-label="Mês anterior">
+                    <span aria-hidden="true">‹</span>
+                  </button>
+                  <strong id="calendar-month-label">--</strong>
+                  <button id="calendar-next-month" type="button" aria-label="Próximo mês">
+                    <span aria-hidden="true">›</span>
+                  </button>
+                </div>
+                <div class="calendar-weekdays" aria-hidden="true">
+                  <span>Dom</span>
+                  <span>Seg</span>
+                  <span>Ter</span>
+                  <span>Qua</span>
+                  <span>Qui</span>
+                  <span>Sex</span>
+                  <span>Sáb</span>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+                <button class="today-button" id="date-today" type="button">Hoje</button>
+              </div>
+            </div>
 
-          <div class="competition-tabs" id="competition-filter" role="tablist" aria-label="Campeonatos"></div>
+            <label class="field">
+              <span>Busca</span>
+              <input id="search-filter" type="search" placeholder="Time, estádio ou canal">
+            </label>
+          </div>
+
+          <div class="competition-field">
+            <span class="filter-title">Campeonatos</span>
+            <div class="competition-tabs" id="competition-filter" role="tablist" aria-label="Campeonatos"></div>
+          </div>
         </section>
 
         <section class="list-header" aria-live="polite">
           <div>
             <p class="eyebrow">Atualizado em</p>
             <strong id="updated-at">--</strong>
-            <span class="source-pill" id="source-label">--</span>
+            <div class="source-row">
+              <span class="source-pill" id="source-label">--</span>
+              <span class="auto-refresh-status" id="auto-refresh-status">Auto: --</span>
+            </div>
           </div>
           <button class="icon-button" id="refresh-button" type="button" aria-label="Atualizar jogos" title="Atualizar jogos">
             <span aria-hidden="true">↻</span>

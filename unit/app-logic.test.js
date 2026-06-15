@@ -2,19 +2,26 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  AUTO_REFRESH_INTERVALS,
   FALLBACK_DATA,
   LEAGUES,
   buildScoreboardUrl,
   enrichBroadcastsForCompetition,
   filterGames,
+  formatDateDisplayParts,
+  formatRefreshInterval,
   gameMatchesQuery,
+  getAutoRefreshInterval,
   getBroadcastName,
+  getCalendarDays,
+  getMonthStartISO,
   getNormalizedBroadcasts,
   getMatchDisplayValue,
   getStatusLabel,
   mapEspnScoreboard,
   normalizeBroadcast,
   normalizeText,
+  shiftDateISO,
   sortGamesByTime,
   summarizeGames
 } = require("../js/app.js");
@@ -130,6 +137,41 @@ test("sorts games by kickoff time", () => {
   ]);
 
   assert.deepEqual(games.map((game) => game.time), ["19:00", "21:30"]);
+});
+
+test("formats and shifts custom date picker values", () => {
+  assert.equal(shiftDateISO("2026-06-15", 1), "2026-06-16");
+  assert.equal(shiftDateISO("2026-06-15", -1), "2026-06-14");
+  assert.equal(getMonthStartISO("2026-06-15"), "2026-06-01");
+  assert.deepEqual(formatDateDisplayParts("2026-06-15", "2026-06-15"), {
+    dayLabel: "Hoje",
+    dateLabel: "15/06/2026"
+  });
+  assert.equal(formatDateDisplayParts("2026-06-16", "2026-06-15").dayLabel, "Amanhã");
+});
+
+test("builds a fixed calendar grid for the selected month", () => {
+  const days = getCalendarDays("2026-06-01", "2026-06-15", "2026-06-15");
+  const selectedDay = days.find((day) => day.selected);
+
+  assert.equal(days.length, 42);
+  assert.equal(selectedDay.iso, "2026-06-15");
+  assert.equal(selectedDay.today, true);
+  assert.equal(days.some((day) => !day.currentMonth), true);
+});
+
+test("chooses conservative auto refresh intervals", () => {
+  assert.equal(
+    getAutoRefreshInterval("2026-06-15", [{ date: "2026-06-15", status: "live" }], "2026-06-15"),
+    AUTO_REFRESH_INTERVALS.live
+  );
+  assert.equal(
+    getAutoRefreshInterval("2026-06-15", [{ date: "2026-06-15", status: "scheduled" }], "2026-06-15"),
+    AUTO_REFRESH_INTERVALS.today
+  );
+  assert.equal(getAutoRefreshInterval("2026-06-16", [], "2026-06-15"), AUTO_REFRESH_INTERVALS.otherDate);
+  assert.equal(formatRefreshInterval(AUTO_REFRESH_INTERVALS.live), "90s");
+  assert.equal(formatRefreshInterval(AUTO_REFRESH_INTERVALS.today), "4 min");
 });
 
 test("summarizes total, live games and broadcasts", () => {
