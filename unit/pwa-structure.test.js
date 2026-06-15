@@ -43,25 +43,30 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v1/);
+  assert.match(serviceWorker, /jogos-hoje-v2/);
+  assert.match(serviceWorker, /site\.api\.espn\.com/);
   for (const asset of ["index.html", "css/app.css", "js/app.js", "data/jogos.json"]) {
     assert.match(serviceWorker, new RegExp(asset.replace(".", "\\.")));
   }
 });
 
-test("sample data only includes supported competitions", () => {
+test("local fallback has no fake matches", () => {
   const data = JSON.parse(read("data/jogos.json"));
-  const supported = new Set([
+
+  assert.deepEqual(data.games, []);
+  assert.equal(data.source.type, "offline");
+});
+
+test("app exposes all supported competitions in source", () => {
+  const app = read("js/app.js");
+
+  for (const label of [
     "Brasileirão Série A",
     "Paulista Série A1",
     "Libertadores",
-    "Copa do Brasil"
-  ]);
-
-  assert.ok(Array.isArray(data.games));
-  assert.ok(data.games.length > 0);
-  data.games.forEach((game) => {
-    assert.ok(supported.has(game.competition), `${game.competition} should be supported`);
-    assert.ok(Array.isArray(game.broadcasts), "broadcasts should be an array");
-  });
+    "Copa do Brasil",
+    "Copa do Mundo 2026"
+  ]) {
+    assert.match(app, new RegExp(label));
+  }
 });

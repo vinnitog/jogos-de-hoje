@@ -1,68 +1,38 @@
-const STORAGE_KEY = "jogos-hoje-cache-v1";
+const STORAGE_KEY = "jogos-hoje-cache-v2";
 const DATA_URL = "data/jogos.json";
-const COMPETITIONS = [
-  "Brasileirão Série A",
-  "Paulista Série A1",
-  "Libertadores",
-  "Copa do Brasil"
+const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
+const TIME_ZONE = "America/Sao_Paulo";
+const LEAGUES = [
+  {
+    name: "Brasileirão Série A",
+    slug: "bra.1"
+  },
+  {
+    name: "Paulista Série A1",
+    slug: "bra.camp.paulista"
+  },
+  {
+    name: "Libertadores",
+    slug: "conmebol.libertadores"
+  },
+  {
+    name: "Copa do Brasil",
+    slug: "bra.copa_do_brazil"
+  },
+  {
+    name: "Copa do Mundo 2026",
+    slug: "fifa.world"
+  }
 ];
+const COMPETITIONS = LEAGUES.map((league) => league.name);
 
 const FALLBACK_DATA = {
-  updatedAt: "2026-06-15T16:26:00-03:00",
+  updatedAt: null,
   source: {
-    label: "Dados demonstrativos",
-    type: "sample"
+    label: "Sem dados offline",
+    type: "offline"
   },
-  games: [
-    {
-      id: "demo-bra-001",
-      competition: "Brasileirão Série A",
-      stage: "Rodada",
-      date: "2026-06-15",
-      time: "19:00",
-      home: "Palmeiras",
-      away: "Flamengo",
-      venue: "Allianz Parque, São Paulo",
-      status: "scheduled",
-      broadcasts: ["Globo", "Premiere"]
-    },
-    {
-      id: "demo-cdb-001",
-      competition: "Copa do Brasil",
-      stage: "Oitavas de final",
-      date: "2026-06-15",
-      time: "21:30",
-      home: "Cruzeiro",
-      away: "Athletico-PR",
-      venue: "Mineirão, Belo Horizonte",
-      status: "scheduled",
-      broadcasts: ["SporTV", "Premiere"]
-    },
-    {
-      id: "demo-lib-001",
-      competition: "Libertadores",
-      stage: "Grupo",
-      date: "2026-06-15",
-      time: "21:00",
-      home: "São Paulo",
-      away: "Nacional",
-      venue: "Morumbis, São Paulo",
-      status: "live",
-      broadcasts: ["ESPN", "Disney+"]
-    },
-    {
-      id: "demo-pau-001",
-      competition: "Paulista Série A1",
-      stage: "Primeira fase",
-      date: "2026-06-16",
-      time: "20:00",
-      home: "Santos",
-      away: "Ponte Preta",
-      venue: "Vila Belmiro, Santos",
-      status: "scheduled",
-      broadcasts: ["Record", "Paulistão Play"]
-    }
-  ]
+  games: []
 };
 
 const state = {
@@ -77,6 +47,40 @@ function getTodayISO(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getDateISOInTimeZone(value, timeZone = TIME_ZONE) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(value));
+
+  const partMap = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
+}
+
+function getTimeInTimeZone(value, timeZone = TIME_ZONE) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function toEspnDate(dateISO) {
+  return String(dateISO || getTodayISO()).replaceAll("-", "");
+}
+
+function buildScoreboardUrl(slug, dateISO) {
+  const params = new URLSearchParams({
+    dates: toEspnDate(dateISO),
+    region: "br",
+    lang: "pt"
+  });
+
+  return `${ESPN_API_BASE}/${slug}/scoreboard?${params.toString()}`;
 }
 
 function normalizeText(value) {
@@ -158,35 +162,153 @@ function getStatusLabel(status) {
   return labels[status] || "Programado";
 }
 
-function readCachedData() {
+function mapEspnStatus(statusType = {}) {
+  const statusName = normalizeText(statusType.name);
+  const description = normalizeText(statusType.description);
+
+  if (statusName.includes("postponed") || description.includes("adiado")) {
+    return "postponed";
+  }
+
+  if (statusType.state === "in") {
+    return "live";
+  }
+
+  if (statusType.completed || statusType.state === "post") {
+    return "finished";
+  }
+
+  return "scheduled";
+}
+
+function findCompetitor(competitors = [], homeAway) {
+  return competitors.find((competitor) => competitor.homeAway === homeAway) || null;
+}
+
+function formatVenue(venue = {}) {
+  const city = venue.address?.city;
+  const country = venue.address?.country;
+  const location = [city, country].filter(Boolean).join(", ");
+
+  return [venue.fullName || venue.displayName, location].filter(Boolean).join(" - ");
+}
+
+function extractBroadcasts(competition = {}) {
+  const broadcastNames = (competition.broadcasts || [])
+    .flatMap((broadcast) => broadcast.names || [])
+    .filter(Boolean);
+
+  const geoBroadcastNames = (competition.geoBroadcasts || [])
+    .filter((broadcast) => !broadcast.region || broadcast.region === "br")
+    .map((broadcast) => broadcast.media?.shortName)
+    .filter(Boolean);
+
+  return [...new Set([...broadcastNames, ...geoBroadcastNames])];
+}
+
+function mapEspnEvent(event, league) {
+  const competition = event.competitions?.[0] || {};
+  const competitors = competition.competitors || [];
+  const home = findCompetitor(competitors, "home") || competitors[0] || {};
+  const away = findCompetitor(competitors, "away") || competitors[1] || {};
+  const status = mapEspnStatus(competition.status?.type || event.status?.type || {});
+  const kickoff = competition.date || event.date;
+  const homeScore = home.score;
+  const awayScore = away.score;
+  const score = homeScore != null && awayScore != null ? `${homeScore} x ${awayScore}` : "";
+
+  return {
+    id: `${league.slug}-${event.id}`,
+    competition: league.name,
+    stage: competition.altGameNote || event.season?.slug || league.name,
+    date: getDateISOInTimeZone(kickoff),
+    time: getTimeInTimeZone(kickoff),
+    home: home.team?.displayName || home.team?.shortDisplayName || "Mandante",
+    away: away.team?.displayName || away.team?.shortDisplayName || "Visitante",
+    venue: formatVenue(competition.venue || event.venue),
+    status,
+    score,
+    broadcasts: extractBroadcasts(competition),
+    sourceUrl: event.links?.find((link) => link.rel?.includes("summary"))?.href || ""
+  };
+}
+
+function mapEspnScoreboard(scoreboard, league) {
+  return (scoreboard.events || []).map((event) => mapEspnEvent(event, league));
+}
+
+async function fetchLeagueGames(league, dateISO) {
+  const response = await fetch(buildScoreboardUrl(league.slug, dateISO), {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao carregar ${league.name}: ${response.status}`);
+  }
+
+  return mapEspnScoreboard(await response.json(), league);
+}
+
+async function fetchRealGamesData(dateISO) {
+  const results = await Promise.allSettled(
+    LEAGUES.map((league) => fetchLeagueGames(league, dateISO))
+  );
+  const games = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  const failedRequests = results.filter((result) => result.status === "rejected").length;
+
+  if (failedRequests === LEAGUES.length) {
+    throw new Error("Nenhuma fonte real respondeu.");
+  }
+
+  return {
+    updatedAt: new Date().toISOString(),
+    source: {
+      label: failedRequests > 0 ? "ESPN Brasil (parcial)" : "ESPN Brasil",
+      type: "espn"
+    },
+    games
+  };
+}
+
+function readCachedData(dateISO) {
   try {
-    const cached = localStorage.getItem(STORAGE_KEY);
-    return cached ? JSON.parse(cached) : null;
+    const cached = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    return cached[dateISO] || null;
   } catch {
     return null;
   }
 }
 
-function cacheData(data) {
+function cacheData(dateISO, data) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const cached = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    cached[dateISO] = data;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cached));
   } catch {
-    // Sem espaço ou modo privado: o app continua com os dados em memória.
+    // Sem espaco ou modo privado: o app continua com os dados em memoria.
   }
 }
 
-async function loadGamesData() {
+async function loadLocalFallbackData() {
   try {
     const response = await fetch(DATA_URL, { cache: "no-store" });
     if (!response.ok) {
-      throw new Error(`Falha ao carregar dados: ${response.status}`);
+      throw new Error(`Falha ao carregar fallback: ${response.status}`);
     }
 
-    const data = await response.json();
-    cacheData(data);
+    return response.json();
+  } catch {
+    return FALLBACK_DATA;
+  }
+}
+
+async function loadGamesData(dateISO = state.selectedDate) {
+  try {
+    const data = await fetchRealGamesData(dateISO);
+    cacheData(dateISO, data);
     return data;
   } catch {
-    return readCachedData() || FALLBACK_DATA;
+    return readCachedData(dateISO) || loadLocalFallbackData();
   }
 }
 
@@ -238,13 +360,13 @@ function renderGameCard(game) {
   status.classList.toggle("is-finished", game.status === "finished");
   card.querySelector(".home-team").textContent = game.home;
   card.querySelector(".away-team").textContent = game.away;
-  card.querySelector(".score-time").textContent = game.time || "--:--";
+  card.querySelector(".score-time").textContent = game.score || game.time || "--:--";
   card.querySelector(".stage").textContent = game.stage || "--";
   card.querySelector(".venue").textContent = game.venue || "--";
 
   broadcasts.textContent = "";
   if ((game.broadcasts || []).length === 0) {
-    broadcasts.textContent = "A confirmar";
+    broadcasts.textContent = "A confirmar pela fonte";
   } else {
     game.broadcasts.forEach((channel) => broadcasts.append(createBroadcastChip(channel)));
   }
@@ -309,9 +431,9 @@ function bindEvents() {
 
   if (dateFilter) {
     dateFilter.value = state.selectedDate;
-    dateFilter.addEventListener("change", () => {
+    dateFilter.addEventListener("change", async () => {
       state.selectedDate = dateFilter.value || getTodayISO();
-      renderApp();
+      await refreshData();
     });
   }
 
@@ -345,9 +467,13 @@ if (typeof module !== "undefined") {
   module.exports = {
     COMPETITIONS,
     FALLBACK_DATA,
+    LEAGUES,
+    buildScoreboardUrl,
     filterGames,
     gameMatchesQuery,
     getStatusLabel,
+    mapEspnEvent,
+    mapEspnScoreboard,
     getTodayISO,
     normalizeText,
     sortGamesByTime,
