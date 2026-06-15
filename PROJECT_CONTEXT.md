@@ -4,11 +4,11 @@ Gerado em: 2026-06-15 16:26:23
 
 ## Descricao
 
-PWA simples e funcional que ira ser responsavel por consumir api's que trara informações se terá jogo do brasileirao e campeonato paulista, libertadores e copa do brasil, data e hora dos jogos, quais times irão se enfrentar e onde será transmitido
+PWA simples e funcional que consome API publica de placares para trazer informacoes de jogos do Brasileirao, Campeonato Paulista, Libertadores, Copa do Brasil e Copa do Mundo 2026: data, hora, times, local, status e transmissao quando a fonte informar.
 
 ## Objetivo
 
-Listar jogos do dia referente aos campeonatos, brasileiro, paulista, libertadores e copa do brasil, somente das séries A e listar tambem onde esses jogos serão transmitidos
+Listar jogos do dia referentes aos campeonatos Brasileiro Serie A, Paulista Serie A1, Libertadores, Copa do Brasil e Copa do Mundo 2026, mostrando tambem onde esses jogos serao transmitidos quando a API retornar essa informacao.
 
 ## Publico Alvo
 
@@ -19,11 +19,11 @@ Nao definido
 - Interface visual: Sim
 - Login/autenticacao: Nao
 - Banco de dados: Nao
-- Offline/PWA: Nao
+- Offline/PWA: Sim
 - Mobile: Sim
 - Dashboard/graficos: Nao
 - API propria: Nao
-- Integracoes externas: Nao
+- Integracoes externas: Sim
 - Multiusuario: Nao
 
 ## Stack Escolhida
@@ -31,6 +31,26 @@ Nao definido
 ```text
 HTML + CSS + JavaScript vanilla + Service Worker
 ```
+
+## Integracao De Dados
+
+Fonte primaria:
+
+```text
+ESPN scoreboard API publica, com region=br e lang=pt
+```
+
+Ligas consumidas:
+
+- `bra.1` - Brasileirao Serie A
+- `bra.camp.paulista` - Paulista Serie A1
+- `conmebol.libertadores` - Libertadores
+- `bra.copa_do_brazil` - Copa do Brasil
+- `fifa.world` - Copa do Mundo 2026
+
+Observacao:
+
+A transmissao e exibida somente quando a fonte retornar canais/plataformas. Se a API nao informar transmissao brasileira, a interface deve mostrar "A confirmar pela fonte" para evitar dado inventado.
 
 ## Motivo Da Stack
 
