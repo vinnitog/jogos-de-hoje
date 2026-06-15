@@ -105,6 +105,18 @@
             <div class="source-row">
               <span class="source-pill" id="source-label">--</span>
               <span class="auto-refresh-status" id="auto-refresh-status">Auto: --</span>
+              <label class="notification-toggle" id="goal-notification-control">
+                <input
+                  id="goal-notifications-toggle"
+                  type="checkbox"
+                  role="switch"
+                  aria-describedby="goal-notification-status"
+                  aria-label="Notificacoes de gol"
+                >
+                <span class="notification-toggle__track" aria-hidden="true"></span>
+                <span class="notification-toggle__text">Gols</span>
+              </label>
+              <span class="notification-status" id="goal-notification-status">Gols: desligado</span>
             </div>
           </div>
           <button class="icon-button" id="refresh-button" type="button" aria-label="Atualizar jogos" title="Atualizar jogos">
