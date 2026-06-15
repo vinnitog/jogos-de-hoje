@@ -377,12 +377,19 @@ button {
   display: inline-flex;
   min-height: 28px;
   align-items: center;
+  border: 1px solid transparent;
   border-radius: 999px;
   padding: 2px 9px;
   background: #fff4d5;
   color: #5b4300;
   font-size: 0.84rem;
   font-weight: 800;
+}
+
+.broadcast-chip.is-guaranteed {
+  border-color: rgba(16, 92, 70, 0.24);
+  background: #e7f2ec;
+  color: var(--color-primary-dark);
 }
 
 .empty-state {
