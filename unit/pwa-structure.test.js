@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { getWhatsAppPresetContact } = require("../js/app.js");
 
 const root = path.join(__dirname, "..");
 
@@ -38,6 +39,7 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /id="whatsapp-panel"/);
   assert.match(html, /id="whatsapp-form"/);
   assert.match(html, /id="whatsapp-phone"/);
+  assert.match(html, /id="whatsapp-default-contact"/);
   assert.match(html, /id="whatsapp-copy-button"/);
   assert.doesNotMatch(html, /type="date"/);
 });
@@ -63,7 +65,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v8/);
+  assert.match(serviceWorker, /jogos-hoje-v9/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);
@@ -87,15 +89,23 @@ test("goal notification source persists preference and requests permission", () 
 
 test("WhatsApp share source stores one contact and opens a wa.me URL", () => {
   const app = read("js/app.js");
+  const html = read("index.html");
   const css = read("css/app.css");
+  const fixedPhone = getWhatsAppPresetContact().phone;
 
   assert.match(app, /WHATSAPP_CONTACT_STORAGE_KEY\s*=\s*"jogos-hoje-whatsapp-contact"/);
+  assert.match(app, /WHATSAPP_PRESET_CONTACTS/);
+  assert.match(app, /sealedDigits/);
+  assert.match(app, /selectedWhatsAppPresetContactId/);
   assert.match(app, /localStorage\.setItem\(WHATSAPP_CONTACT_STORAGE_KEY,\s*phone\)/);
   assert.match(app, /https:\/\/wa\.me\/\$\{normalizedPhone\}\?text=/);
   assert.match(app, /formatGamesShareMessage\(getCurrentFilteredGames\(\)/);
   assert.match(app, /navigator\.clipboard/);
+  assert.equal(app.includes(fixedPhone), false);
+  assert.equal(html.includes(fixedPhone), false);
   assert.match(css, /\.share-panel\[hidden\]\s*{[^}]*display:\s*none/s);
   assert.match(css, /\.icon-button--whatsapp/);
+  assert.match(css, /\.preset-contact-button\.is-selected/);
 });
 
 test("goal notification refresh compares previous and next games", () => {
