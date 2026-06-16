@@ -22,6 +22,7 @@ const {
   getNormalizedBroadcasts,
   getMatchDisplayValue,
   getStatusLabel,
+  getWhatsAppPresetContact,
   mapEspnScoreboard,
   normalizeBroadcast,
   normalizeText,
@@ -217,6 +218,14 @@ test("normalizes WhatsApp phone numbers for a single contact", () => {
   assert.equal(normalizeWhatsAppPhone("0055 11 99999-9999"), "5511999999999");
   assert.equal(normalizeWhatsAppPhone("351 912 345 678"), "351912345678");
   assert.equal(normalizeWhatsAppPhone("12345"), "");
+});
+
+test("decodes the fixed WhatsApp contact without exposing it in the UI", () => {
+  const contact = getWhatsAppPresetContact();
+
+  assert.equal(contact.label, "Contato padrao");
+  assert.equal(contact.phone.length, 13);
+  assert.match(contact.phone, /^55\d{11}$/);
 });
 
 test("builds WhatsApp URL with encoded agenda message", () => {

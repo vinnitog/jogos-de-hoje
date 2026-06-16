@@ -1,6 +1,7 @@
 const STORAGE_KEY = "jogos-hoje-cache-v2";
 const GOAL_NOTIFICATIONS_STORAGE_KEY = "jogos-hoje-goal-notifications";
 const WHATSAPP_CONTACT_STORAGE_KEY = "jogos-hoje-whatsapp-contact";
+const WHATSAPP_DEFAULT_CONTACT_ID = "primary";
 const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
 const DATA_URL = "data/jogos.json";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
@@ -43,6 +44,13 @@ const LEAGUES = [
   }
 ];
 const COMPETITIONS = LEAGUES.map((league) => league.name);
+const WHATSAPP_PRESET_CONTACTS = [
+  {
+    id: WHATSAPP_DEFAULT_CONTACT_ID,
+    label: "Contato padrao",
+    sealedDigits: [70, 71, 68, 72, 78, 73, 67, 73, 74, 74, 67, 69, 73]
+  }
+];
 
 const FALLBACK_DATA = {
   updatedAt: null,
@@ -60,6 +68,7 @@ const state = {
   selectedCompetition: "Todos",
   query: "",
   whatsAppPhone: readWhatsAppPhonePreference(),
+  selectedWhatsAppPresetContactId: "",
   goalNotificationsEnabled: readGoalNotificationsPreference()
 };
 
@@ -250,6 +259,34 @@ function normalizeWhatsAppPhone(value, defaultCountryCode = "55") {
   }
 
   return "";
+}
+
+function unsealContactDigits(sealedDigits = []) {
+  return sealedDigits
+    .map((value, index) => String.fromCharCode(value - 17 - (index % 5)))
+    .join("");
+}
+
+function getWhatsAppPresetContact(contactId = WHATSAPP_DEFAULT_CONTACT_ID) {
+  const preset = WHATSAPP_PRESET_CONTACTS.find((contact) => contact.id === contactId);
+
+  if (!preset) {
+    return null;
+  }
+
+  return {
+    id: preset.id,
+    label: preset.label,
+    phone: unsealContactDigits(preset.sealedDigits)
+  };
+}
+
+function getSelectedWhatsAppPhone(inputValue) {
+  const preset = state.selectedWhatsAppPresetContactId
+    ? getWhatsAppPresetContact(state.selectedWhatsAppPresetContactId)
+    : null;
+
+  return preset?.phone || normalizeWhatsAppPhone(inputValue || state.whatsAppPhone);
 }
 
 function isGoalNotificationSupported() {
@@ -1335,9 +1372,25 @@ function setWhatsAppStatus(message, type = "") {
 
 function renderWhatsAppPanel() {
   const input = document.querySelector("#whatsapp-phone");
+  const presetButton = document.querySelector("#whatsapp-default-contact");
+  const presetStatus = document.querySelector("#whatsapp-default-contact-status");
+  const selectedPreset = state.selectedWhatsAppPresetContactId
+    ? getWhatsAppPresetContact(state.selectedWhatsAppPresetContactId)
+    : null;
+  const defaultPreset = getWhatsAppPresetContact();
 
   if (input && document.activeElement !== input) {
-    input.value = state.whatsAppPhone;
+    input.value = selectedPreset ? "" : state.whatsAppPhone;
+  }
+
+  if (presetButton && defaultPreset) {
+    const isSelected = selectedPreset?.id === defaultPreset.id;
+    presetButton.classList.toggle("is-selected", isSelected);
+    presetButton.setAttribute("aria-pressed", String(isSelected));
+  }
+
+  if (presetStatus) {
+    presetStatus.textContent = selectedPreset ? "Selecionado" : "Toque para usar";
   }
 }
 
@@ -1395,23 +1448,42 @@ function handleWhatsAppSubmit(event) {
   event.preventDefault();
 
   const input = document.querySelector("#whatsapp-phone");
-  const phone = normalizeWhatsAppPhone(input?.value || state.whatsAppPhone);
+  const phone = getSelectedWhatsAppPhone(input?.value || "");
+  const isPresetContact = Boolean(state.selectedWhatsAppPresetContactId);
 
   if (!phone) {
-    setWhatsAppStatus("Informe um telefone com DDI e DDD.", "error");
+    setWhatsAppStatus("Selecione o contato padrao ou informe um telefone com DDI e DDD.", "error");
     input?.focus();
     return;
   }
 
-  state.whatsAppPhone = phone;
-  saveWhatsAppPhonePreference(phone);
+  if (!isPresetContact) {
+    state.whatsAppPhone = phone;
+    saveWhatsAppPhonePreference(phone);
 
-  if (input) {
-    input.value = phone;
+    if (input) {
+      input.value = phone;
+    }
   }
 
   setWhatsAppStatus("Abrindo WhatsApp...", "success");
   openWhatsAppUrl(buildWhatsAppUrl(phone, getCurrentShareMessage()));
+}
+
+function handleWhatsAppPresetContactClick() {
+  state.selectedWhatsAppPresetContactId = WHATSAPP_DEFAULT_CONTACT_ID;
+  setWhatsAppStatus("Contato padrao selecionado.", "success");
+  renderWhatsAppPanel();
+}
+
+function handleWhatsAppPhoneInput() {
+  if (!state.selectedWhatsAppPresetContactId) {
+    return;
+  }
+
+  state.selectedWhatsAppPresetContactId = "";
+  setWhatsAppStatus("");
+  renderWhatsAppPanel();
 }
 
 async function handleWhatsAppCopy() {
@@ -1499,6 +1571,8 @@ function bindEvents() {
   const refreshButton = document.querySelector("#refresh-button");
   const whatsAppButton = document.querySelector("#whatsapp-button");
   const whatsAppForm = document.querySelector("#whatsapp-form");
+  const whatsAppPhoneInput = document.querySelector("#whatsapp-phone");
+  const whatsAppPresetButton = document.querySelector("#whatsapp-default-contact");
   const whatsAppCopyButton = document.querySelector("#whatsapp-copy-button");
   const goalNotificationsToggle = document.querySelector("#goal-notifications-toggle");
 
@@ -1539,6 +1613,8 @@ function bindEvents() {
     setWhatsAppPanelOpen(Boolean(panel?.hidden));
   });
   whatsAppForm?.addEventListener("submit", handleWhatsAppSubmit);
+  whatsAppPhoneInput?.addEventListener("input", handleWhatsAppPhoneInput);
+  whatsAppPresetButton?.addEventListener("click", handleWhatsAppPresetContactClick);
   whatsAppCopyButton?.addEventListener("click", handleWhatsAppCopy);
   goalNotificationsToggle?.addEventListener("change", (event) => {
     setGoalNotificationsEnabled(event.currentTarget.checked);
@@ -1600,6 +1676,7 @@ if (typeof module !== "undefined") {
     getCalendarDays,
     getMonthStartISO,
     getTodayISO,
+    getWhatsAppPresetContact,
     enrichBroadcastsForCompetition,
     getBroadcastName,
     getNormalizedBroadcasts,

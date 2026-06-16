@@ -352,6 +352,7 @@ button {
 .today-button:focus-visible,
 .tab-button:focus-visible,
 .icon-button:focus-visible,
+.preset-contact-button:focus-visible,
 .primary-button:focus-visible,
 .secondary-button:focus-visible {
   outline: 3px solid rgba(242, 193, 78, 0.52);
@@ -576,6 +577,51 @@ button {
   margin: 0;
   font-size: 1.15rem;
   line-height: 1.2;
+}
+
+.preset-contact {
+  display: grid;
+}
+
+.preset-contact-button {
+  display: grid;
+  min-height: 56px;
+  justify-items: start;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  background: #ffffff;
+  color: var(--color-primary-dark);
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: left;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.preset-contact-button small {
+  margin-top: 3px;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.preset-contact-button:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-strong);
+}
+
+.preset-contact-button:active {
+  transform: scale(0.98);
+}
+
+.preset-contact-button.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.preset-contact-button.is-selected small {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .share-actions {
