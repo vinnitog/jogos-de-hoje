@@ -34,6 +34,11 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /id="calendar-grid"/);
   assert.match(html, /id="auto-refresh-status"/);
   assert.match(html, /id="goal-notifications-toggle"/);
+  assert.match(html, /id="whatsapp-button"/);
+  assert.match(html, /id="whatsapp-panel"/);
+  assert.match(html, /id="whatsapp-form"/);
+  assert.match(html, /id="whatsapp-phone"/);
+  assert.match(html, /id="whatsapp-copy-button"/);
   assert.doesNotMatch(html, /type="date"/);
 });
 
@@ -58,7 +63,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v7/);
+  assert.match(serviceWorker, /jogos-hoje-v8/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);
@@ -78,6 +83,19 @@ test("goal notification source persists preference and requests permission", () 
   assert.match(app, /Notification\.requestPermission\(\)/);
   assert.match(app, /Notification\.permission === "granted"/);
   assert.match(app, /Notification\.permission === "denied"/);
+});
+
+test("WhatsApp share source stores one contact and opens a wa.me URL", () => {
+  const app = read("js/app.js");
+  const css = read("css/app.css");
+
+  assert.match(app, /WHATSAPP_CONTACT_STORAGE_KEY\s*=\s*"jogos-hoje-whatsapp-contact"/);
+  assert.match(app, /localStorage\.setItem\(WHATSAPP_CONTACT_STORAGE_KEY,\s*phone\)/);
+  assert.match(app, /https:\/\/wa\.me\/\$\{normalizedPhone\}\?text=/);
+  assert.match(app, /formatGamesShareMessage\(getCurrentFilteredGames\(\)/);
+  assert.match(app, /navigator\.clipboard/);
+  assert.match(css, /\.share-panel\[hidden\]\s*{[^}]*display:\s*none/s);
+  assert.match(css, /\.icon-button--whatsapp/);
 });
 
 test("goal notification refresh compares previous and next games", () => {
