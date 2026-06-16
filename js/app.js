@@ -1,5 +1,6 @@
 const STORAGE_KEY = "jogos-hoje-cache-v2";
 const GOAL_NOTIFICATIONS_STORAGE_KEY = "jogos-hoje-goal-notifications";
+const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
 const DATA_URL = "data/jogos.json";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
@@ -219,10 +220,156 @@ function areGoalNotificationsActive() {
   );
 }
 
+async function getServiceWorkerRegistration() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return null;
+  }
+
+  try {
+    const timeoutPromise = new Promise((resolve) => {
+      window.setTimeout(() => resolve(null), NOTIFICATION_SERVICE_WORKER_TIMEOUT);
+    });
+    return await Promise.race([navigator.serviceWorker.ready, timeoutPromise]);
+  } catch {
+    return null;
+  }
+}
+
+async function registerAppServiceWorker() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return null;
+  }
+
+  try {
+    await navigator.serviceWorker.register("sw.js");
+    return getServiceWorkerRegistration();
+  } catch {
+    return null;
+  }
+}
+
+function postGoalNotificationStateToServiceWorker(
+  games = state.data.games || [],
+  dateISO = state.selectedDate,
+  options = {}
+) {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return Promise.resolve(false);
+  }
+
+  const sendState = (registration) => {
+    const worker = registration?.active || navigator.serviceWorker.controller;
+    if (!worker) {
+      return false;
+    }
+
+    const todayISO = getTodayISO();
+    const includeSnapshot = options.includeSnapshot ?? dateISO === todayISO;
+    const payload = {
+      type: "goal-notifications-state",
+      enabled: areGoalNotificationsActive()
+    };
+
+    if (includeSnapshot) {
+      payload.games = games;
+      payload.dateISO = dateISO || todayISO;
+    }
+
+    if (typeof MessageChannel === "undefined") {
+      worker.postMessage(payload);
+      return true;
+    }
+
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      const timeoutId = window.setTimeout(() => resolve(false), NOTIFICATION_SERVICE_WORKER_TIMEOUT);
+
+      channel.port1.onmessage = () => {
+        window.clearTimeout(timeoutId);
+        resolve(true);
+      };
+
+      worker.postMessage(payload, [channel.port2]);
+    });
+  };
+
+  return getServiceWorkerRegistration().then(sendState);
+}
+
+async function syncTodayGoalNotificationSnapshot() {
+  const todayISO = getTodayISO();
+
+  if (state.selectedDate === todayISO) {
+    return postGoalNotificationStateToServiceWorker(state.data.games || [], todayISO, {
+      includeSnapshot: true
+    });
+  }
+
+  const todayData = readCachedData(todayISO) || (await loadGamesData(todayISO));
+  return postGoalNotificationStateToServiceWorker(todayData.games || [], todayISO, {
+    includeSnapshot: true
+  });
+}
+
+async function registerGoalBackgroundSync() {
+  const registration = await getServiceWorkerRegistration();
+  if (!registration) {
+    return false;
+  }
+
+  try {
+    if ("periodicSync" in registration) {
+      let permission = null;
+      try {
+        permission =
+          navigator.permissions && typeof navigator.permissions.query === "function"
+            ? await navigator.permissions.query({ name: "periodic-background-sync" })
+            : null;
+      } catch {
+        permission = null;
+      }
+
+      try {
+        if (!permission || permission.state !== "denied") {
+          await registration.periodicSync.register(GOAL_BACKGROUND_SYNC_TAG, {
+            minInterval: AUTO_REFRESH_INTERVALS.live
+          });
+          return true;
+        }
+      } catch {
+        // Periodic Sync e opcional; sem ele o app mantem notificacoes em foreground.
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+async function unregisterGoalBackgroundSync() {
+  const registration = await getServiceWorkerRegistration();
+  if (!registration) {
+    return;
+  }
+
+  try {
+    if ("periodicSync" in registration) {
+      await registration.periodicSync.unregister(GOAL_BACKGROUND_SYNC_TAG);
+    }
+  } catch {
+    // Navegadores sem suporte total apenas mantem a notificacao em foreground.
+  }
+}
+
 async function setGoalNotificationsEnabled(shouldEnable) {
   if (!shouldEnable) {
     state.goalNotificationsEnabled = false;
     saveGoalNotificationsPreference(false);
+    await unregisterGoalBackgroundSync();
+    await postGoalNotificationStateToServiceWorker([], getTodayISO(), {
+      includeSnapshot: true
+    });
     renderGoalNotificationToggle();
     return;
   }
@@ -246,6 +393,16 @@ async function setGoalNotificationsEnabled(shouldEnable) {
 
   state.goalNotificationsEnabled = permission === "granted";
   saveGoalNotificationsPreference(state.goalNotificationsEnabled);
+
+  if (state.goalNotificationsEnabled) {
+    await syncTodayGoalNotificationSnapshot();
+    registerGoalBackgroundSync().then(() => renderGoalNotificationToggle());
+  } else {
+    await postGoalNotificationStateToServiceWorker([], getTodayISO(), {
+      includeSnapshot: true
+    });
+  }
+
   renderGoalNotificationToggle();
 }
 
@@ -332,7 +489,7 @@ function detectGoalEvents(previousGames = [], nextGames = []) {
     .map((game) => {
       const previousGame = previousByGame.get(getGoalNotificationGameKey(game));
 
-      if (!previousGame || !["live", "finished"].includes(game.status)) {
+      if (!previousGame || !["live", "halftime", "finished"].includes(game.status)) {
         return null;
       }
 
@@ -392,10 +549,7 @@ async function showServiceWorkerNotification(title, options) {
   }
 
   try {
-    const registrationPromise =
-      typeof navigator.serviceWorker.getRegistration === "function"
-        ? navigator.serviceWorker.getRegistration()
-        : navigator.serviceWorker.ready;
+    const registrationPromise = navigator.serviceWorker.ready;
     const timeoutPromise = new Promise((resolve) => {
       window.setTimeout(() => resolve(null), NOTIFICATION_SERVICE_WORKER_TIMEOUT);
     });
@@ -569,7 +723,7 @@ function filterGames(games, filters) {
 function summarizeGames(games) {
   return {
     total: games.length,
-    live: games.filter((game) => game.status === "live").length,
+    live: games.filter((game) => isGameInProgress(game.status)).length,
     withBroadcast: games.filter((game) =>
       getNormalizedBroadcasts(game.broadcasts).length > 0
     ).length
@@ -577,7 +731,7 @@ function summarizeGames(games) {
 }
 
 function hasLiveGamesOnDate(games, dateISO) {
-  return games.some((game) => game.date === dateISO && game.status === "live");
+  return games.some((game) => game.date === dateISO && isGameInProgress(game.status));
 }
 
 function getAutoRefreshInterval(dateISO, games, todayISO = getTodayISO()) {
@@ -615,6 +769,7 @@ function getStatusLabel(status) {
   const labels = {
     scheduled: "Programado",
     live: "Ao vivo",
+    halftime: "Intervalo",
     finished: "Encerrado",
     postponed: "Adiado"
   };
@@ -622,8 +777,16 @@ function getStatusLabel(status) {
   return labels[status] || "Programado";
 }
 
+function isGameInProgress(status) {
+  return ["live", "halftime"].includes(status);
+}
+
+function hasScoreDisplay(status) {
+  return ["live", "halftime", "finished"].includes(status);
+}
+
 function getMatchDisplayValue(game) {
-  if (["live", "finished"].includes(game.status) && game.score) {
+  if (hasScoreDisplay(game.status) && game.score) {
     return game.score;
   }
 
@@ -636,6 +799,17 @@ function mapEspnStatus(statusType = {}) {
 
   if (statusName.includes("postponed") || description.includes("adiado")) {
     return "postponed";
+  }
+
+  if (
+    statusName.includes("halftime") ||
+    statusName.includes("half_time") ||
+    statusName.includes("half-time") ||
+    description.includes("intervalo") ||
+    description.includes("half time") ||
+    description.includes("half-time")
+  ) {
+    return "halftime";
   }
 
   if (statusType.state === "in") {
@@ -978,7 +1152,7 @@ function renderGameCard(game) {
 
   card.querySelector(".competition").textContent = game.competition;
   status.textContent = getStatusLabel(game.status);
-  status.classList.toggle("is-live", game.status === "live");
+  status.classList.toggle("is-live", isGameInProgress(game.status));
   status.classList.toggle("is-finished", game.status === "finished");
   card.querySelector(".home-team").textContent = game.home;
   card.querySelector(".away-team").textContent = game.away;
@@ -1072,8 +1246,10 @@ async function refreshData(options = {}) {
   try {
     const previousGames = state.data.games || [];
     const nextData = await loadGamesData();
-    notifyGoalEvents(previousGames, nextData.games || []);
+    const nextGames = nextData.games || [];
+    notifyGoalEvents(previousGames, nextGames);
     state.data = nextData;
+    postGoalNotificationStateToServiceWorker(nextGames);
     return state.data;
   } finally {
     const pendingOptions = refreshRuntime.pendingOptions;
@@ -1151,15 +1327,18 @@ function bindEvents() {
 
     refreshWhenDue("visible");
   });
+  navigator.serviceWorker?.addEventListener("controllerchange", () => {
+    postGoalNotificationStateToServiceWorker();
+  });
 }
 
 async function initApp() {
   bindEvents();
   renderApp();
+  await registerAppServiceWorker();
   await refreshData({ reason: "initial", force: true });
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js");
+  if (areGoalNotificationsActive()) {
+    registerGoalBackgroundSync();
   }
 }
 
