@@ -58,7 +58,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v6/);
+  assert.match(serviceWorker, /jogos-hoje-v7/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);
@@ -73,6 +73,7 @@ test("goal notification source persists preference and requests permission", () 
   const app = read("js/app.js");
 
   assert.match(app, /GOAL_NOTIFICATIONS_STORAGE_KEY\s*=\s*"jogos-hoje-goal-notifications"/);
+  assert.match(app, /GOAL_BACKGROUND_SYNC_TAG\s*=\s*"goal-notifications-live"/);
   assert.match(app, /localStorage\.setItem\(GOAL_NOTIFICATIONS_STORAGE_KEY,\s*enabled \? "on" : "off"\)/);
   assert.match(app, /Notification\.requestPermission\(\)/);
   assert.match(app, /Notification\.permission === "granted"/);
@@ -83,8 +84,10 @@ test("goal notification refresh compares previous and next games", () => {
   const app = read("js/app.js");
 
   assert.match(app, /const previousGames = state\.data\.games \|\| \[\]/);
-  assert.match(app, /notifyGoalEvents\(previousGames,\s*nextData\.games \|\| \[\]\)/);
+  assert.match(app, /const nextGames = nextData\.games \|\| \[\]/);
+  assert.match(app, /notifyGoalEvents\(previousGames,\s*nextGames\)/);
   assert.match(app, /state\.data = nextData/);
+  assert.match(app, /postGoalNotificationStateToServiceWorker\(nextGames\)/);
 });
 
 test("goal notification payload uses stable tag and app icons", () => {
@@ -103,6 +106,28 @@ test("goal notification uses service worker with browser fallback", () => {
   assert.match(app, /showServiceWorkerNotification\(goalEvent\.title,\s*options\)/);
   assert.match(app, /createBrowserNotification\(goalEvent\.title,\s*options\)/);
   assert.match(app, /NOTIFICATION_SERVICE_WORKER_TIMEOUT/);
+  assert.match(app, /navigator\.serviceWorker\.ready/);
+  assert.match(app, /registerAppServiceWorker\(\)/);
+});
+
+test("goal notification background sync is wired through the service worker", () => {
+  const app = read("js/app.js");
+  const serviceWorker = read("sw.js");
+
+  assert.match(app, /registration\.periodicSync\.register\(GOAL_BACKGROUND_SYNC_TAG/);
+  assert.doesNotMatch(app, /registration\.sync\.register\(GOAL_BACKGROUND_SYNC_TAG\)/);
+  assert.match(app, /MessageChannel/);
+  assert.match(app, /type:\s*"goal-notifications-state"/);
+  assert.match(app, /worker\.postMessage\(payload/);
+  assert.match(app, /includeSnapshot/);
+  assert.match(app, /syncTodayGoalNotificationSnapshot/);
+  assert.match(serviceWorker, /GOAL_STATE_CACHE_KEY/);
+  assert.match(serviceWorker, /periodicsync/);
+  assert.match(serviceWorker, /self\.addEventListener\("sync"/);
+  assert.match(serviceWorker, /syncGoalNotifications/);
+  assert.match(serviceWorker, /showNotification\(goalEvent\.title/);
+  assert.match(serviceWorker, /event\.ports\?\.\[0\]\?\.postMessage/);
+  assert.match(serviceWorker, /LIVE_SCORE_STATUSES\s*=\s*\["live",\s*"halftime",\s*"finished"\]/);
 });
 
 test("notification click closes notification and returns to app", () => {

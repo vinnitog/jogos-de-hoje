@@ -168,6 +168,14 @@ test("chooses conservative auto refresh intervals", () => {
     AUTO_REFRESH_INTERVALS.live
   );
   assert.equal(
+    getAutoRefreshInterval(
+      "2026-06-15",
+      [{ date: "2026-06-15", status: "halftime" }],
+      "2026-06-15"
+    ),
+    AUTO_REFRESH_INTERVALS.live
+  );
+  assert.equal(
     getAutoRefreshInterval("2026-06-15", [{ date: "2026-06-15", status: "scheduled" }], "2026-06-15"),
     AUTO_REFRESH_INTERVALS.today
   );
@@ -178,12 +186,22 @@ test("chooses conservative auto refresh intervals", () => {
 
 test("summarizes total, live games and broadcasts", () => {
   const summary = summarizeGames(
-    TEST_GAMES.filter((game) => game.date === "2026-06-15")
+    [
+      ...TEST_GAMES.filter((game) => game.date === "2026-06-15"),
+      {
+        competition: "Copa do Brasil",
+        date: "2026-06-15",
+        home: "Cruzeiro",
+        away: "Bahia",
+        status: "halftime",
+        broadcasts: []
+      }
+    ]
   );
 
   assert.deepEqual(summary, {
-    total: 2,
-    live: 1,
+    total: 3,
+    live: 2,
     withBroadcast: 1
   });
 });
@@ -263,6 +281,7 @@ test("search matches broadcasts without accents", () => {
 
 test("returns readable status labels", () => {
   assert.equal(getStatusLabel("live"), "Ao vivo");
+  assert.equal(getStatusLabel("halftime"), "Intervalo");
   assert.equal(getStatusLabel("unknown"), "Programado");
 });
 
@@ -282,6 +301,14 @@ test("shows kickoff time before the match and score after kickoff", () => {
       score: "1 x 0"
     }),
     "1 x 0"
+  );
+  assert.equal(
+    getMatchDisplayValue({
+      status: "halftime",
+      time: "16:00",
+      score: "1 x 1"
+    }),
+    "1 x 1"
   );
   assert.equal(
     getMatchDisplayValue({
@@ -518,6 +545,35 @@ test("detects goals from live to finished status", () => {
   assert.equal(events[0].score, "0 x 1");
 });
 
+test("detects goals when the match enters halftime", () => {
+  const game = {
+    id: "bra.1-1",
+    competition: "Brasileirao Serie A",
+    date: "2026-06-15",
+    home: "Palmeiras",
+    away: "Flamengo",
+    score: "0 x 0"
+  };
+  const events = detectGoalEvents(
+    [
+      {
+        ...game,
+        status: "live"
+      }
+    ],
+    [
+      {
+        ...game,
+        status: "halftime",
+        score: "1 x 0"
+      }
+    ]
+  );
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].title, "Gol do Palmeiras!");
+});
+
 test("does not notify when a scoreboard correction lowers one side", () => {
   const game = {
     id: "bra.1-1",
@@ -590,6 +646,55 @@ test("maps ESPN scoreboard events to app games", () => {
     "CazéTV"
   ]);
   assert.equal(games[0].broadcasts.at(-1).guaranteed, true);
+});
+
+test("maps ESPN halftime status to interval", () => {
+  const games = mapEspnScoreboard(
+    {
+      events: [
+        {
+          id: "123",
+          date: "2026-06-15T19:00Z",
+          competitions: [
+            {
+              date: "2026-06-15T19:00Z",
+              status: {
+                type: {
+                  state: "in",
+                  completed: false,
+                  name: "STATUS_HALFTIME",
+                  description: "Intervalo"
+                }
+              },
+              competitors: [
+                {
+                  homeAway: "home",
+                  score: "1",
+                  team: {
+                    displayName: "Palmeiras"
+                  }
+                },
+                {
+                  homeAway: "away",
+                  score: "0",
+                  team: {
+                    displayName: "Flamengo"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      name: "Brasileirão Série A",
+      slug: "bra.1"
+    }
+  );
+
+  assert.equal(games[0].status, "halftime");
+  assert.equal(games[0].score, "1 x 0");
 });
 
 test("fallback data does not include demonstrative matches", () => {
