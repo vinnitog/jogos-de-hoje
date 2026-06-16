@@ -802,6 +802,13 @@ button {
   color: var(--color-primary-dark);
 }
 
+.broadcast-chip.is-habitual {
+  border-style: dashed;
+  border-color: rgba(91, 67, 0, 0.32);
+  background: #fbf6e6;
+  color: #6b5200;
+}
+
 .empty-state {
   display: grid;
   justify-items: center;
