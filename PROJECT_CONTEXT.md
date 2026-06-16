@@ -67,7 +67,16 @@ Modelo de transmissao esperado:
 }
 ```
 
-Para Brasileirao, Paulista, Libertadores e Copa do Brasil, manter a regra conservadora: usar apenas ESPN ou futuras fontes confiaveis por jogo, sem fallback inventado.
+Decisao revisada (2026-06-16):
+
+A ESPN com `region=br` nao retorna canais (`broadcasts`/`geoBroadcasts` vem vazios) para Brasileirao, Paulista, Libertadores e Copa do Brasil. Para nao deixar a coluna "Onde assistir" vazia, o app passa a usar um mapa curado de transmissoes habituais por competicao (`LEAGUE_DEFAULT_BROADCASTS` em `js/app.js`), marcadas como `source: "manual"` e `guaranteed: false`.
+
+Regras desse mapa:
+
+- As transmissoes habituais entram apenas quando a fonte (ESPN/futuras) nao trouxer canais para o jogo. Se a fonte trouxer dado por jogo, ele tem prioridade e o mapa nao e somado.
+- No UI, esses canais aparecem como "transmissao habitual da competicao" (chip tracejado), diferenciando de canais confirmados por jogo. Cabe ao usuario conferir a grade do dia.
+- A CazeTV na Copa do Mundo 2026 permanece como `guaranteed: true` e entra sempre, inclusive junto de canais da fonte.
+- O mapa reflete os direitos vigentes no Brasil e deve ser revisado a cada temporada, pois os contratos mudam por ano.
 
 Atualizacao automatica:
 
