@@ -21,6 +21,33 @@ const WORLD_CUP_2026_DEFAULT_BROADCAST = {
   guaranteed: true,
   source: "manual"
 };
+// Transmissoes habituais por competicao no Brasil. A ESPN nao retorna canais
+// para a regiao "br", entao este mapa curado complementa a lista quando a fonte
+// nao traz nada. Sao marcadas como source "manual" (habitual da competicao),
+// nao confirmadas por jogo, exceto a CazeTV na Copa do Mundo (guaranteed).
+const LEAGUE_DEFAULT_BROADCASTS = {
+  "Brasileirão Série A": [
+    { name: "Premiere", type: "ppv", source: "manual" },
+    { name: "Globo", type: "tv", source: "manual" },
+    { name: "CazéTV", type: "streaming", source: "manual" }
+  ],
+  "Paulista Série A1": [
+    { name: "CazéTV", type: "streaming", source: "manual" },
+    { name: "Record", type: "tv", source: "manual" },
+    { name: "Paulistão Play", type: "streaming", source: "manual" }
+  ],
+  Libertadores: [
+    { name: "Paramount+", type: "streaming", source: "manual" },
+    { name: "SBT", type: "tv", source: "manual" },
+    { name: "ESPN", type: "tv", source: "manual" }
+  ],
+  "Copa do Brasil": [
+    { name: "Prime Video", type: "streaming", source: "manual" },
+    { name: "Globo", type: "tv", source: "manual" },
+    { name: "SporTV", type: "tv", source: "manual" }
+  ],
+  [WORLD_CUP_2026]: [WORLD_CUP_2026_DEFAULT_BROADCAST]
+};
 const LEAGUES = [
   {
     name: "Brasileirão Série A",
@@ -259,6 +286,57 @@ function normalizeWhatsAppPhone(value, defaultCountryCode = "55") {
   }
 
   return "";
+}
+
+function formatBrazilPhoneMask(localDigits, prefix = "") {
+  const digits = String(localDigits || "").slice(0, 11);
+
+  if (digits.length === 0) {
+    return prefix.trim();
+  }
+
+  const ddd = digits.slice(0, 2);
+
+  if (digits.length <= 2) {
+    return `${prefix}(${ddd}`;
+  }
+
+  const rest = digits.slice(2);
+  let formattedRest;
+
+  if (rest.length <= 4) {
+    formattedRest = rest;
+  } else if (rest.length <= 8) {
+    formattedRest = `${rest.slice(0, 4)}-${rest.slice(4)}`;
+  } else {
+    formattedRest = `${rest.slice(0, 5)}-${rest.slice(5)}`;
+  }
+
+  return `${prefix}(${ddd}) ${formattedRest}`;
+}
+
+function formatWhatsAppPhoneInput(value) {
+  const raw = String(value || "");
+  const hadInternational = raw.trim().startsWith("+");
+  let digits = raw.replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  if (digits.startsWith("00")) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith("55") && digits.length > 2) {
+    return formatBrazilPhoneMask(digits.slice(2), "+55 ");
+  }
+
+  if (!hadInternational && digits.length <= 11) {
+    return formatBrazilPhoneMask(digits);
+  }
+
+  return `+${digits}`;
 }
 
 function unsealContactDigits(sealedDigits = []) {
@@ -769,20 +847,24 @@ function mergeBroadcasts(broadcasts) {
 }
 
 function getDefaultBroadcastsForCompetition(competition) {
-  if (competition === WORLD_CUP_2026) {
-    return [WORLD_CUP_2026_DEFAULT_BROADCAST];
-  }
-
-  return [];
+  return LEAGUE_DEFAULT_BROADCASTS[competition] || [];
 }
 
 function enrichBroadcastsForCompetition(competition, broadcasts = []) {
-  const sourceBroadcasts = broadcasts.map((broadcast) =>
-    normalizeBroadcast(broadcast, { source: "espn" })
-  );
+  const sourceBroadcasts = broadcasts
+    .map((broadcast) => normalizeBroadcast(broadcast, { source: "espn" }))
+    .filter(Boolean);
   const defaultBroadcasts = getDefaultBroadcastsForCompetition(competition);
+  const guaranteedDefaults = defaultBroadcasts.filter((broadcast) => broadcast.guaranteed);
+  // Transmissoes garantidas (ex.: CazeTV na Copa do Mundo) entram sempre.
+  // As habituais por liga so complementam quando a fonte nao trouxe canais,
+  // para nao misturar palpite de liga com dado preciso por jogo.
+  const habitualDefaults =
+    sourceBroadcasts.length > 0
+      ? []
+      : defaultBroadcasts.filter((broadcast) => !broadcast.guaranteed);
 
-  return mergeBroadcasts([...sourceBroadcasts, ...defaultBroadcasts]);
+  return mergeBroadcasts([...sourceBroadcasts, ...guaranteedDefaults, ...habitualDefaults]);
 }
 
 function filterGames(games, filters) {
@@ -1259,11 +1341,15 @@ function createBroadcastChip(channel) {
   const chip = document.createElement("span");
   chip.className = "broadcast-chip";
   chip.textContent = broadcast.name;
+  const isHabitual = !broadcast.guaranteed && broadcast.source === "manual";
   chip.classList.toggle("is-guaranteed", broadcast.guaranteed);
+  chip.classList.toggle("is-habitual", isHabitual);
   chip.dataset.type = broadcast.type;
   chip.title = broadcast.guaranteed
     ? `${broadcast.name} - transmissão confirmada para esta competição`
-    : `${broadcast.name} - informado pela fonte`;
+    : isHabitual
+      ? `${broadcast.name} - transmissão habitual da competição (confirme a grade do dia)`
+      : `${broadcast.name} - informado pela fonte`;
   return chip;
 }
 
@@ -1380,7 +1466,7 @@ function renderWhatsAppPanel() {
   const defaultPreset = getWhatsAppPresetContact();
 
   if (input && document.activeElement !== input) {
-    input.value = selectedPreset ? "" : state.whatsAppPhone;
+    input.value = selectedPreset ? "" : formatWhatsAppPhoneInput(state.whatsAppPhone);
   }
 
   if (presetButton && defaultPreset) {
@@ -1476,7 +1562,17 @@ function handleWhatsAppPresetContactClick() {
   renderWhatsAppPanel();
 }
 
-function handleWhatsAppPhoneInput() {
+function handleWhatsAppPhoneInput(event) {
+  const input = event?.currentTarget || document.querySelector("#whatsapp-phone");
+
+  if (input) {
+    const masked = formatWhatsAppPhoneInput(input.value);
+    if (masked !== input.value) {
+      input.value = masked;
+      input.setSelectionRange?.(masked.length, masked.length);
+    }
+  }
+
   if (!state.selectedWhatsAppPresetContactId) {
     return;
   }
@@ -1681,6 +1777,7 @@ if (typeof module !== "undefined") {
     getBroadcastName,
     getNormalizedBroadcasts,
     normalizeWhatsAppPhone,
+    formatWhatsAppPhoneInput,
     normalizeText,
     normalizeBroadcast,
     parseScore,
