@@ -6,10 +6,13 @@ const {
   FALLBACK_DATA,
   LEAGUES,
   buildScoreboardUrl,
+  buildWhatsAppUrl,
   detectGoalEvents,
   enrichBroadcastsForCompetition,
   filterGames,
+  formatBroadcastsForShare,
   formatDateDisplayParts,
+  formatGamesShareMessage,
   formatRefreshInterval,
   gameMatchesQuery,
   getAutoRefreshInterval,
@@ -22,6 +25,7 @@ const {
   mapEspnScoreboard,
   normalizeBroadcast,
   normalizeText,
+  normalizeWhatsAppPhone,
   parseScore,
   shiftDateISO,
   sortGamesByTime,
@@ -204,6 +208,54 @@ test("summarizes total, live games and broadcasts", () => {
     live: 2,
     withBroadcast: 1
   });
+});
+
+test("normalizes WhatsApp phone numbers for a single contact", () => {
+  assert.equal(normalizeWhatsAppPhone("(11) 99999-9999"), "5511999999999");
+  assert.equal(normalizeWhatsAppPhone("011 99999-9999"), "5511999999999");
+  assert.equal(normalizeWhatsAppPhone("+55 11 99999-9999"), "5511999999999");
+  assert.equal(normalizeWhatsAppPhone("0055 11 99999-9999"), "5511999999999");
+  assert.equal(normalizeWhatsAppPhone("351 912 345 678"), "351912345678");
+  assert.equal(normalizeWhatsAppPhone("12345"), "");
+});
+
+test("builds WhatsApp URL with encoded agenda message", () => {
+  const message = "Agenda dos jogos - 15/06/2026\nPalmeiras x Flamengo";
+  const url = buildWhatsAppUrl("(11) 99999-9999", message);
+
+  assert.equal(url.startsWith("https://wa.me/5511999999999?text="), true);
+  assert.equal(decodeURIComponent(url.split("?text=")[1]), message);
+  assert.equal(buildWhatsAppUrl("12345", message), "");
+});
+
+test("formats agenda message from filtered games", () => {
+  const message = formatGamesShareMessage(
+    TEST_GAMES.filter((game) => game.date === "2026-06-15"),
+    {
+      dateISO: "2026-06-15",
+      sourceLabel: "ESPN Brasil"
+    }
+  );
+
+  assert.match(message, /Agenda dos jogos - 15\/06\/2026/);
+  assert.match(message, /Libertadores/);
+  assert.match(message, /21:00 - .+ Paulo x Nacional \(Ao vivo\)/);
+  assert.match(message, /Onde assistir: ESPN, Disney\+/);
+  assert.match(message, /Brasileir.+ S.rie A/);
+  assert.match(message, /19:00 - Palmeiras x Flamengo/);
+  assert.match(message, /Onde assistir: A confirmar pela fonte/);
+  assert.match(message, /Fonte: ESPN Brasil/);
+});
+
+test("formats empty agenda message for current filters", () => {
+  const message = formatGamesShareMessage([], {
+    dateISO: "2026-06-15",
+    sourceLabel: "Sem dados offline"
+  });
+
+  assert.match(message, /Nenhum jogo encontrado para os filtros atuais/);
+  assert.match(message, /Fonte: Sem dados offline/);
+  assert.equal(formatBroadcastsForShare(["", null]), "A confirmar pela fonte");
 });
 
 test("ignores empty broadcast entries", () => {
