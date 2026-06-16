@@ -1,5 +1,6 @@
 const STORAGE_KEY = "jogos-hoje-cache-v2";
 const GOAL_NOTIFICATIONS_STORAGE_KEY = "jogos-hoje-goal-notifications";
+const WHATSAPP_CONTACT_STORAGE_KEY = "jogos-hoje-whatsapp-contact";
 const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
 const DATA_URL = "data/jogos.json";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
@@ -58,6 +59,7 @@ const state = {
   calendarMonthDate: getTodayISO(),
   selectedCompetition: "Todos",
   query: "",
+  whatsAppPhone: readWhatsAppPhonePreference(),
   goalNotificationsEnabled: readGoalNotificationsPreference()
 };
 
@@ -206,6 +208,48 @@ function saveGoalNotificationsPreference(enabled) {
   } catch {
     // Preferencia em memoria apenas; navegadores privados podem bloquear storage.
   }
+}
+
+function readWhatsAppPhonePreference() {
+  try {
+    return localStorage.getItem(WHATSAPP_CONTACT_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveWhatsAppPhonePreference(phone) {
+  try {
+    if (phone) {
+      localStorage.setItem(WHATSAPP_CONTACT_STORAGE_KEY, phone);
+    } else {
+      localStorage.removeItem(WHATSAPP_CONTACT_STORAGE_KEY);
+    }
+  } catch {
+    // Preferencia em memoria apenas; navegadores privados podem bloquear storage.
+  }
+}
+
+function normalizeWhatsAppPhone(value, defaultCountryCode = "55") {
+  let digits = String(value || "").replace(/\D/g, "");
+
+  if (digits.startsWith("00")) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith("0") && (digits.length === 11 || digits.length === 12)) {
+    digits = digits.slice(1);
+  }
+
+  if (digits.length >= 12 && digits.length <= 15) {
+    return digits;
+  }
+
+  if (digits.length === 10 || digits.length === 11) {
+    return `${defaultCountryCode}${digits}`;
+  }
+
+  return "";
 }
 
 function isGoalNotificationSupported() {
@@ -730,6 +774,71 @@ function summarizeGames(games) {
   };
 }
 
+function formatBroadcastsForShare(broadcasts = []) {
+  const names = getNormalizedBroadcasts(broadcasts).map(getBroadcastName);
+  return names.length > 0 ? names.join(", ") : "A confirmar pela fonte";
+}
+
+function formatGameForShare(game) {
+  const statusLabel = getStatusLabel(game.status);
+  const matchDisplay = getMatchDisplayValue(game);
+  const isScore = hasScoreDisplay(game.status) && Boolean(game.score);
+  const statusSuffix = game.status && game.status !== "scheduled" ? ` (${statusLabel})` : "";
+  const mainLine = isScore
+    ? `${game.home} ${matchDisplay} ${game.away}${statusSuffix}`
+    : `${matchDisplay} - ${game.home} x ${game.away}${statusSuffix}`;
+  const details = [`Onde assistir: ${formatBroadcastsForShare(game.broadcasts)}`];
+
+  if (game.venue) {
+    details.push(`Local: ${game.venue}`);
+  }
+
+  return [`- ${mainLine}`, ...details.map((detail) => `  ${detail}`)].join("\n");
+}
+
+function groupGamesByCompetition(games) {
+  return sortGamesByTime(games).reduce((groups, game) => {
+    if (!groups.has(game.competition)) {
+      groups.set(game.competition, []);
+    }
+
+    groups.get(game.competition).push(game);
+    return groups;
+  }, new Map());
+}
+
+function formatGamesShareMessage(games = [], options = {}) {
+  const dateISO = options.dateISO || games[0]?.date || getTodayISO();
+  const dateLabel = formatDateDisplayParts(dateISO).dateLabel;
+  const lines = [`Agenda dos jogos - ${dateLabel}`, ""];
+
+  if (games.length === 0) {
+    lines.push("Nenhum jogo encontrado para os filtros atuais.");
+  } else {
+    groupGamesByCompetition(games).forEach((competitionGames, competition) => {
+      lines.push(competition);
+      lines.push(...competitionGames.map(formatGameForShare));
+      lines.push("");
+    });
+  }
+
+  if (options.sourceLabel) {
+    lines.push(`Fonte: ${options.sourceLabel}`);
+  }
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function buildWhatsAppUrl(phone, message) {
+  const normalizedPhone = normalizeWhatsAppPhone(phone);
+
+  if (!normalizedPhone) {
+    return "";
+  }
+
+  return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message || "")}`;
+}
+
 function hasLiveGamesOnDate(games, dateISO) {
   return games.some((game) => game.date === dateISO && isGameInProgress(game.status));
 }
@@ -1202,15 +1311,128 @@ function renderConnectionStatus() {
   element.classList.toggle("is-offline", !isOnline);
 }
 
+function getCurrentFilteredGames() {
+  return filterGames(state.data.games || [], state);
+}
+
+function getCurrentShareMessage() {
+  return formatGamesShareMessage(getCurrentFilteredGames(), {
+    dateISO: state.selectedDate,
+    sourceLabel: state.data.source?.label || ""
+  });
+}
+
+function setWhatsAppStatus(message, type = "") {
+  const element = document.querySelector("#whatsapp-status");
+  if (!element) {
+    return;
+  }
+
+  element.textContent = message;
+  element.classList.toggle("is-error", type === "error");
+  element.classList.toggle("is-success", type === "success");
+}
+
+function renderWhatsAppPanel() {
+  const input = document.querySelector("#whatsapp-phone");
+
+  if (input && document.activeElement !== input) {
+    input.value = state.whatsAppPhone;
+  }
+}
+
+function setWhatsAppPanelOpen(isOpen) {
+  const panel = document.querySelector("#whatsapp-panel");
+  const input = document.querySelector("#whatsapp-phone");
+
+  if (!panel) {
+    return;
+  }
+
+  panel.hidden = !isOpen;
+  setWhatsAppStatus("");
+
+  if (isOpen) {
+    renderWhatsAppPanel();
+    input?.focus();
+  }
+}
+
+function openWhatsAppUrl(url) {
+  if (url) {
+    window.location.href = url;
+  }
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Continua para o fallback abaixo.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+function handleWhatsAppSubmit(event) {
+  event.preventDefault();
+
+  const input = document.querySelector("#whatsapp-phone");
+  const phone = normalizeWhatsAppPhone(input?.value || state.whatsAppPhone);
+
+  if (!phone) {
+    setWhatsAppStatus("Informe um telefone com DDI e DDD.", "error");
+    input?.focus();
+    return;
+  }
+
+  state.whatsAppPhone = phone;
+  saveWhatsAppPhonePreference(phone);
+
+  if (input) {
+    input.value = phone;
+  }
+
+  setWhatsAppStatus("Abrindo WhatsApp...", "success");
+  openWhatsAppUrl(buildWhatsAppUrl(phone, getCurrentShareMessage()));
+}
+
+async function handleWhatsAppCopy() {
+  const copied = await copyTextToClipboard(getCurrentShareMessage());
+
+  setWhatsAppStatus(
+    copied ? "Mensagem copiada." : "Nao foi possivel copiar automaticamente.",
+    copied ? "success" : "error"
+  );
+}
+
 function renderApp() {
   renderCompetitionTabs();
   renderDatePicker();
-  const filteredGames = filterGames(state.data.games || [], state);
+  const filteredGames = getCurrentFilteredGames();
   renderGames(filteredGames);
   renderSummary(filteredGames);
   renderConnectionStatus();
   renderAutoRefreshStatus();
   renderGoalNotificationToggle();
+  renderWhatsAppPanel();
   setText("#updated-at", formatDateTime(state.data.updatedAt));
   setText("#source-label", state.data.source?.label || "Fonte não informada");
 }
@@ -1275,6 +1497,9 @@ function bindEvents() {
   const nextMonth = document.querySelector("#calendar-next-month");
   const searchFilter = document.querySelector("#search-filter");
   const refreshButton = document.querySelector("#refresh-button");
+  const whatsAppButton = document.querySelector("#whatsapp-button");
+  const whatsAppForm = document.querySelector("#whatsapp-form");
+  const whatsAppCopyButton = document.querySelector("#whatsapp-copy-button");
   const goalNotificationsToggle = document.querySelector("#goal-notifications-toggle");
 
   datePrev?.addEventListener("click", () => updateSelectedDate(shiftDateISO(state.selectedDate, -1)));
@@ -1309,6 +1534,12 @@ function bindEvents() {
   }
 
   refreshButton?.addEventListener("click", () => refreshData({ reason: "manual" }));
+  whatsAppButton?.addEventListener("click", () => {
+    const panel = document.querySelector("#whatsapp-panel");
+    setWhatsAppPanelOpen(Boolean(panel?.hidden));
+  });
+  whatsAppForm?.addEventListener("submit", handleWhatsAppSubmit);
+  whatsAppCopyButton?.addEventListener("click", handleWhatsAppCopy);
   goalNotificationsToggle?.addEventListener("change", (event) => {
     setGoalNotificationsEnabled(event.currentTarget.checked);
   });
@@ -1352,9 +1583,12 @@ if (typeof module !== "undefined") {
     COMPETITIONS,
     FALLBACK_DATA,
     LEAGUES,
+    buildWhatsAppUrl,
     buildScoreboardUrl,
     detectGoalEvents,
+    formatBroadcastsForShare,
     formatDateDisplayParts,
+    formatGamesShareMessage,
     formatRefreshInterval,
     filterGames,
     gameMatchesQuery,
@@ -1369,6 +1603,7 @@ if (typeof module !== "undefined") {
     enrichBroadcastsForCompetition,
     getBroadcastName,
     getNormalizedBroadcasts,
+    normalizeWhatsAppPhone,
     normalizeText,
     normalizeBroadcast,
     parseScore,
