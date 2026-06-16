@@ -119,9 +119,39 @@
               <span class="notification-status" id="goal-notification-status">Gols: desligado</span>
             </div>
           </div>
-          <button class="icon-button" id="refresh-button" type="button" aria-label="Atualizar jogos" title="Atualizar jogos">
-            <span aria-hidden="true">↻</span>
-          </button>
+          <div class="list-actions">
+            <button class="icon-button icon-button--whatsapp" id="whatsapp-button" type="button" aria-label="Enviar agenda pelo WhatsApp" title="Enviar agenda pelo WhatsApp">
+              <span aria-hidden="true">WA</span>
+            </button>
+            <button class="icon-button" id="refresh-button" type="button" aria-label="Atualizar jogos" title="Atualizar jogos">
+              <span aria-hidden="true">↻</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="share-panel" id="whatsapp-panel" aria-labelledby="whatsapp-panel-title" hidden>
+          <form class="share-form" id="whatsapp-form">
+            <div class="share-heading">
+              <p class="eyebrow">WhatsApp</p>
+              <h2 id="whatsapp-panel-title">Enviar agenda</h2>
+            </div>
+            <label class="field share-phone-field">
+              <span>Contato</span>
+              <input
+                id="whatsapp-phone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="+55 11 99999-9999"
+                aria-describedby="whatsapp-status"
+              >
+            </label>
+            <div class="share-actions">
+              <button class="secondary-button" id="whatsapp-copy-button" type="button">Copiar</button>
+              <button class="primary-button" type="submit">Abrir WhatsApp</button>
+            </div>
+          </form>
+          <p class="share-status" id="whatsapp-status" role="status" aria-live="polite"></p>
         </section>
 
         <section class="game-list" id="game-list" aria-label="Lista de jogos"></section>
