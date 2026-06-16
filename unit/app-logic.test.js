@@ -14,6 +14,7 @@ const {
   formatDateDisplayParts,
   formatGamesShareMessage,
   formatRefreshInterval,
+  formatWhatsAppPhoneInput,
   gameMatchesQuery,
   getAutoRefreshInterval,
   getBroadcastName,
@@ -220,6 +221,27 @@ test("normalizes WhatsApp phone numbers for a single contact", () => {
   assert.equal(normalizeWhatsAppPhone("12345"), "");
 });
 
+test("masks WhatsApp phone input progressively", () => {
+  assert.equal(formatWhatsAppPhoneInput(""), "");
+  assert.equal(formatWhatsAppPhoneInput("1"), "(1");
+  assert.equal(formatWhatsAppPhoneInput("11"), "(11");
+  assert.equal(formatWhatsAppPhoneInput("1199"), "(11) 99");
+  assert.equal(formatWhatsAppPhoneInput("11999999999"), "(11) 99999-9999");
+  assert.equal(formatWhatsAppPhoneInput("1133334444"), "(11) 3333-4444");
+});
+
+test("masks WhatsApp phone input with country code", () => {
+  assert.equal(formatWhatsAppPhoneInput("5511999999999"), "+55 (11) 99999-9999");
+  assert.equal(formatWhatsAppPhoneInput("+55 11 99999-9999"), "+55 (11) 99999-9999");
+  assert.equal(formatWhatsAppPhoneInput("0055 11 99999-9999"), "+55 (11) 99999-9999");
+  assert.equal(formatWhatsAppPhoneInput("+351 912 345 678"), "+351912345678");
+});
+
+test("keeps masked phone compatible with normalization", () => {
+  const masked = formatWhatsAppPhoneInput("11999999999");
+  assert.equal(normalizeWhatsAppPhone(masked), "5511999999999");
+});
+
 test("decodes the fixed WhatsApp contact without exposing it in the UI", () => {
   const contact = getWhatsAppPresetContact();
 
@@ -309,7 +331,6 @@ test("normalizes string and object broadcasts", () => {
 
 test("adds CazéTV as guaranteed World Cup 2026 fallback only", () => {
   const worldCupBroadcasts = enrichBroadcastsForCompetition("Copa do Mundo 2026", []);
-  const brasileiraoBroadcasts = enrichBroadcastsForCompetition("Brasileirão Série A", []);
 
   assert.deepEqual(worldCupBroadcasts, [
     {
@@ -319,7 +340,23 @@ test("adds CazéTV as guaranteed World Cup 2026 fallback only", () => {
       source: "manual"
     }
   ]);
-  assert.deepEqual(brasileiraoBroadcasts, []);
+});
+
+test("fills habitual league broadcasts when the source is empty", () => {
+  const brasileirao = enrichBroadcastsForCompetition("Brasileirão Série A", []);
+  const libertadores = enrichBroadcastsForCompetition("Libertadores", []);
+
+  assert.deepEqual(brasileirao.map(getBroadcastName), ["Premiere", "Globo", "CazéTV"]);
+  assert.equal(brasileirao.every((broadcast) => broadcast.source === "manual"), true);
+  assert.equal(brasileirao.every((broadcast) => broadcast.guaranteed === false), true);
+  assert.deepEqual(libertadores.map(getBroadcastName), ["Paramount+", "SBT", "ESPN"]);
+});
+
+test("prefers source broadcasts over habitual league defaults", () => {
+  const broadcasts = enrichBroadcastsForCompetition("Brasileirão Série A", ["SporTV"]);
+
+  assert.deepEqual(broadcasts.map(getBroadcastName), ["SporTV"]);
+  assert.equal(broadcasts[0].source, "espn");
 });
 
 test("deduplicates World Cup fallback with source broadcasts", () => {
