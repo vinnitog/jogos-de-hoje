@@ -46,7 +46,28 @@ const LEAGUE_DEFAULT_BROADCASTS = {
     { name: "Globo", type: "tv", source: "manual" },
     { name: "SporTV", type: "tv", source: "manual" }
   ],
-  [WORLD_CUP_2026]: [WORLD_CUP_2026_DEFAULT_BROADCAST]
+  // Direitos da Copa do Mundo 2026 no Brasil: CazeTV (streaming, garantida) +
+  // Globo (TV aberta) e SporTV (TV fechada). Globo/SporTV entram como habituais,
+  // ou seja, complementam quando a fonte nao trouxe canais por jogo.
+  [WORLD_CUP_2026]: [
+    WORLD_CUP_2026_DEFAULT_BROADCAST,
+    { name: "Globo", type: "tv", source: "manual" },
+    { name: "SporTV", type: "tv", source: "manual" }
+  ]
+};
+const ESPN_STANDINGS_BASE = "https://site.api.espn.com/apis/v2/sports/soccer";
+const WORLD_CUP_SLUG = "fifa.world";
+// Janela da fase eliminatoria da Copa 2026 (16avos ate a final).
+const WORLD_CUP_KNOCKOUT_RANGE = { start: "2026-06-28", end: "2026-07-20" };
+// Mapa dos codigos de seasonType da ESPN para os rounds do mata-mata.
+// A ordem controla a sequencia das colunas no chaveamento.
+const WORLD_CUP_KNOCKOUT_ROUNDS = {
+  13801: { label: "16 avos", order: 1 },
+  13800: { label: "Oitavas", order: 2 },
+  13799: { label: "Quartas", order: 3 },
+  13798: { label: "Semifinais", order: 4 },
+  13797: { label: "3º lugar", order: 5 },
+  13803: { label: "Final", order: 6 }
 };
 const LEAGUES = [
   {
@@ -96,7 +117,16 @@ const state = {
   query: "",
   whatsAppPhone: readWhatsAppPhonePreference(),
   selectedWhatsAppPresetContactId: "",
-  goalNotificationsEnabled: readGoalNotificationsPreference()
+  goalNotificationsEnabled: readGoalNotificationsPreference(),
+  worldCup: {
+    open: false,
+    view: "groups",
+    standings: null,
+    knockout: null,
+    loading: false,
+    loadedAt: 0,
+    error: ""
+  }
 };
 
 const refreshRuntime = {
@@ -1107,6 +1137,164 @@ function mapEspnScoreboard(scoreboard, league) {
   return (scoreboard.events || []).map((event) => mapEspnEvent(event, league));
 }
 
+function buildWorldCupStandingsUrl() {
+  const params = new URLSearchParams({ region: "br", lang: "pt" });
+  return `${ESPN_STANDINGS_BASE}/${WORLD_CUP_SLUG}/standings?${params.toString()}`;
+}
+
+function buildWorldCupKnockoutUrl(range = WORLD_CUP_KNOCKOUT_RANGE) {
+  const params = new URLSearchParams({
+    dates: `${toEspnDate(range.start)}-${toEspnDate(range.end)}`,
+    region: "br",
+    lang: "pt"
+  });
+  return `${ESPN_API_BASE}/${WORLD_CUP_SLUG}/scoreboard?${params.toString()}`;
+}
+
+function getStandingStat(entry, type) {
+  const stat = (entry.stats || []).find((item) => item.type === type);
+  return stat ? String(stat.displayValue ?? stat.value ?? "") : "";
+}
+
+function mapStandingEntry(entry = {}) {
+  const team = entry.team || {};
+  const note = entry.note || {};
+
+  return {
+    name: team.displayName || team.shortDisplayName || team.name || "A definir",
+    abbreviation: team.abbreviation || "",
+    logo: team.logos?.[0]?.href || "",
+    rank: Number(getStandingStat(entry, "rank")) || null,
+    played: getStandingStat(entry, "gamesplayed") || "0",
+    wins: getStandingStat(entry, "wins") || "0",
+    draws: getStandingStat(entry, "ties") || "0",
+    losses: getStandingStat(entry, "losses") || "0",
+    goalsFor: getStandingStat(entry, "pointsfor") || "0",
+    goalsAgainst: getStandingStat(entry, "pointsagainst") || "0",
+    goalDifference: getStandingStat(entry, "pointdifferential") || "0",
+    points: getStandingStat(entry, "points") || "0",
+    advancing: Number(getStandingStat(entry, "advanced")) === 1,
+    noteText: note.description || ""
+  };
+}
+
+function mapEspnStandings(standings = {}) {
+  return (standings.children || [])
+    .map((group) => ({
+      name: group.name || group.abbreviation || "Grupo",
+      teams: (group.standings?.entries || [])
+        .map(mapStandingEntry)
+        .sort((a, b) => (a.rank || 99) - (b.rank || 99))
+    }))
+    .filter((group) => group.teams.length > 0);
+}
+
+function getKnockoutRoundMeta(seasonType) {
+  return WORLD_CUP_KNOCKOUT_ROUNDS[seasonType] || null;
+}
+
+function mapKnockoutMatch(event) {
+  const game = mapEspnEvent(event, { name: WORLD_CUP_2026, slug: WORLD_CUP_SLUG });
+  const competition = event.competitions?.[0] || {};
+  const competitors = competition.competitors || [];
+  const home = findCompetitor(competitors, "home") || competitors[0] || {};
+  const away = findCompetitor(competitors, "away") || competitors[1] || {};
+
+  return {
+    id: game.id,
+    date: game.date,
+    time: game.time,
+    status: game.status,
+    score: game.score,
+    home: game.home,
+    away: game.away,
+    homeWinner: Boolean(home.winner),
+    awayWinner: Boolean(away.winner)
+  };
+}
+
+function mapEspnKnockout(scoreboard = {}) {
+  const rounds = new Map();
+
+  (scoreboard.events || []).forEach((event) => {
+    const meta = getKnockoutRoundMeta(event.season?.type);
+    if (!meta) {
+      return;
+    }
+
+    if (!rounds.has(meta.order)) {
+      rounds.set(meta.order, { label: meta.label, order: meta.order, matches: [] });
+    }
+
+    rounds.get(meta.order).matches.push(mapKnockoutMatch(event));
+  });
+
+  return [...rounds.values()]
+    .sort((a, b) => a.order - b.order)
+    .map((round) => ({
+      label: round.label,
+      matches: round.matches.sort((a, b) =>
+        `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)
+      )
+    }));
+}
+
+async function fetchWorldCupStandings() {
+  const response = await fetch(buildWorldCupStandingsUrl(), { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao carregar classificação: ${response.status}`);
+  }
+
+  return mapEspnStandings(await response.json());
+}
+
+async function fetchWorldCupKnockout() {
+  const response = await fetch(buildWorldCupKnockoutUrl(), { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao carregar chaveamento: ${response.status}`);
+  }
+
+  return mapEspnKnockout(await response.json());
+}
+
+async function loadWorldCupData(options = {}) {
+  const wc = state.worldCup;
+  const isFresh = wc.loadedAt && Date.now() - wc.loadedAt < AUTO_REFRESH_INTERVALS.live;
+
+  if (!options.force && isFresh && wc.standings && wc.knockout) {
+    return wc;
+  }
+
+  if (wc.loading) {
+    return wc;
+  }
+
+  wc.loading = true;
+  wc.error = "";
+  renderWorldCupPanel();
+
+  try {
+    const [standings, knockout] = await Promise.all([
+      fetchWorldCupStandings(),
+      fetchWorldCupKnockout()
+    ]);
+    wc.standings = standings;
+    wc.knockout = knockout;
+    wc.loadedAt = Date.now();
+  } catch {
+    if (!wc.standings && !wc.knockout) {
+      wc.error = "Não foi possível carregar os dados da Copa agora.";
+    }
+  } finally {
+    wc.loading = false;
+    renderWorldCupPanel();
+  }
+
+  return wc;
+}
+
 async function fetchLeagueGames(league, dateISO) {
   const response = await fetch(buildScoreboardUrl(league.slug, dateISO), {
     cache: "no-store"
@@ -1591,6 +1779,235 @@ async function handleWhatsAppCopy() {
   );
 }
 
+function createWorldCupNotice(text) {
+  const notice = document.createElement("p");
+  notice.className = "wc-notice";
+  notice.textContent = text;
+  return notice;
+}
+
+function createTableCell(text, className) {
+  const cell = document.createElement("td");
+  if (className) {
+    cell.className = className;
+  }
+  cell.textContent = text;
+  return cell;
+}
+
+function renderWorldCupGroupTable(group) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "wc-group";
+
+  const title = document.createElement("h4");
+  title.className = "wc-group__title";
+  title.textContent = group.name;
+  wrapper.append(title);
+
+  const table = document.createElement("table");
+  table.className = "wc-table";
+
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  [
+    ["#", "wc-table__pos"],
+    ["Seleção", "wc-table__team"],
+    ["P", ""],
+    ["J", ""],
+    ["V", ""],
+    ["E", ""],
+    ["D", ""],
+    ["SG", ""]
+  ].forEach(([label, className]) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    if (className) {
+      th.className = className;
+    }
+    headRow.append(th);
+  });
+  head.append(headRow);
+  table.append(head);
+
+  const body = document.createElement("tbody");
+  group.teams.forEach((team, index) => {
+    const row = document.createElement("tr");
+    row.classList.toggle("is-advancing", team.advancing);
+    if (team.noteText) {
+      row.title = team.noteText;
+    }
+
+    row.append(createTableCell(String(team.rank || index + 1), "wc-table__pos"));
+    row.append(createTableCell(team.name, "wc-table__team"));
+    row.append(createTableCell(team.points, "wc-table__points"));
+    row.append(createTableCell(team.played));
+    row.append(createTableCell(team.wins));
+    row.append(createTableCell(team.draws));
+    row.append(createTableCell(team.losses));
+    row.append(createTableCell(team.goalDifference));
+    body.append(row);
+  });
+  table.append(body);
+  wrapper.append(table);
+
+  return wrapper;
+}
+
+function renderWorldCupGroups(container) {
+  const groups = state.worldCup.standings || [];
+
+  if (groups.length === 0) {
+    container.append(
+      createWorldCupNotice("Classificação ainda não disponível para a competição.")
+    );
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "wc-groups";
+  groups.forEach((group) => grid.append(renderWorldCupGroupTable(group)));
+  container.append(grid);
+}
+
+function createBracketTeamRow(name, { winner, eliminated } = {}) {
+  const row = document.createElement("span");
+  row.className = "wc-match__team";
+  row.classList.toggle("is-winner", Boolean(winner));
+  row.classList.toggle("is-out", Boolean(eliminated));
+  row.textContent = name || "A definir";
+  return row;
+}
+
+function createBracketMatch(match) {
+  const card = document.createElement("article");
+  card.className = "wc-match";
+  card.classList.toggle("is-live", isGameInProgress(match.status));
+  card.classList.toggle("is-finished", match.status === "finished");
+
+  const meta = document.createElement("span");
+  meta.className = "wc-match__meta";
+  const dateLabel = formatDateDisplayParts(match.date).dateLabel;
+  meta.textContent = hasScoreDisplay(match.status)
+    ? `${dateLabel} · ${getStatusLabel(match.status)}`
+    : `${dateLabel} · ${match.time || "--:--"}`;
+  card.append(meta);
+
+  const finished = match.status === "finished";
+  card.append(
+    createBracketTeamRow(match.home, {
+      winner: match.homeWinner,
+      eliminated: finished && match.awayWinner
+    })
+  );
+  card.append(
+    createBracketTeamRow(match.away, {
+      winner: match.awayWinner,
+      eliminated: finished && match.homeWinner
+    })
+  );
+
+  if (hasScoreDisplay(match.status) && match.score) {
+    const score = document.createElement("span");
+    score.className = "wc-match__score";
+    score.textContent = match.score;
+    card.append(score);
+  }
+
+  return card;
+}
+
+function renderWorldCupBracket(container) {
+  const rounds = state.worldCup.knockout || [];
+
+  if (rounds.length === 0) {
+    container.append(
+      createWorldCupNotice(
+        "Chaveamento disponível quando a fase eliminatória começar."
+      )
+    );
+    return;
+  }
+
+  const board = document.createElement("div");
+  board.className = "wc-bracket";
+
+  rounds.forEach((round) => {
+    const column = document.createElement("div");
+    column.className = "wc-bracket__round";
+
+    const title = document.createElement("h4");
+    title.className = "wc-bracket__round-title";
+    title.textContent = round.label;
+    column.append(title);
+
+    round.matches.forEach((match) => column.append(createBracketMatch(match)));
+    board.append(column);
+  });
+
+  container.append(board);
+}
+
+function renderWorldCupPanel() {
+  const panel = document.querySelector("#world-cup-panel");
+  const button = document.querySelector("#world-cup-button");
+
+  if (!panel) {
+    return;
+  }
+
+  const wc = state.worldCup;
+  panel.hidden = !wc.open;
+  button?.classList.toggle("is-active", wc.open);
+  button?.setAttribute("aria-expanded", String(wc.open));
+
+  if (!wc.open) {
+    return;
+  }
+
+  document.querySelectorAll("#world-cup-views .wc-view-tab").forEach((tab) => {
+    const isActive = tab.dataset.view === wc.view;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+  });
+
+  const content = document.querySelector("#world-cup-content");
+  if (!content) {
+    return;
+  }
+
+  content.textContent = "";
+
+  if (wc.loading && !wc.standings && !wc.knockout) {
+    content.append(createWorldCupNotice("Carregando dados da Copa..."));
+    return;
+  }
+
+  if (wc.error && !wc.standings && !wc.knockout) {
+    content.append(createWorldCupNotice(wc.error));
+    return;
+  }
+
+  if (wc.view === "bracket") {
+    renderWorldCupBracket(content);
+  } else {
+    renderWorldCupGroups(content);
+  }
+}
+
+function setWorldCupPanelOpen(isOpen) {
+  state.worldCup.open = isOpen;
+  renderWorldCupPanel();
+
+  if (isOpen) {
+    loadWorldCupData();
+  }
+}
+
+function setWorldCupView(view) {
+  state.worldCup.view = view === "bracket" ? "bracket" : "groups";
+  renderWorldCupPanel();
+}
+
 function renderApp() {
   renderCompetitionTabs();
   renderDatePicker();
@@ -1601,6 +2018,7 @@ function renderApp() {
   renderAutoRefreshStatus();
   renderGoalNotificationToggle();
   renderWhatsAppPanel();
+  renderWorldCupPanel();
   setText("#updated-at", formatDateTime(state.data.updatedAt));
   setText("#source-label", state.data.source?.label || "Fonte não informada");
 }
@@ -1652,6 +2070,10 @@ async function refreshData(options = {}) {
     } else {
       scheduleAutoRefresh();
     }
+
+    if (state.worldCup.open) {
+      loadWorldCupData();
+    }
   }
 }
 
@@ -1671,6 +2093,9 @@ function bindEvents() {
   const whatsAppPresetButton = document.querySelector("#whatsapp-default-contact");
   const whatsAppCopyButton = document.querySelector("#whatsapp-copy-button");
   const goalNotificationsToggle = document.querySelector("#goal-notifications-toggle");
+  const worldCupButton = document.querySelector("#world-cup-button");
+  const worldCupViews = document.querySelector("#world-cup-views");
+  const worldCupRefresh = document.querySelector("#world-cup-refresh");
 
   datePrev?.addEventListener("click", () => updateSelectedDate(shiftDateISO(state.selectedDate, -1)));
   dateNext?.addEventListener("click", () => updateSelectedDate(shiftDateISO(state.selectedDate, 1)));
@@ -1715,6 +2140,16 @@ function bindEvents() {
   goalNotificationsToggle?.addEventListener("change", (event) => {
     setGoalNotificationsEnabled(event.currentTarget.checked);
   });
+  worldCupButton?.addEventListener("click", () => {
+    setWorldCupPanelOpen(!state.worldCup.open);
+  });
+  worldCupViews?.addEventListener("click", (event) => {
+    const tab = event.target.closest(".wc-view-tab");
+    if (tab) {
+      setWorldCupView(tab.dataset.view);
+    }
+  });
+  worldCupRefresh?.addEventListener("click", () => loadWorldCupData({ force: true }));
   window.addEventListener("online", () => refreshWhenDue("online"));
   window.addEventListener("offline", () => {
     clearAutoRefreshTimer();
@@ -1769,6 +2204,11 @@ if (typeof module !== "undefined") {
     getStatusLabel,
     mapEspnEvent,
     mapEspnScoreboard,
+    mapEspnStandings,
+    mapEspnKnockout,
+    buildWorldCupStandingsUrl,
+    buildWorldCupKnockoutUrl,
+    getKnockoutRoundMeta,
     getCalendarDays,
     getMonthStartISO,
     getTodayISO,

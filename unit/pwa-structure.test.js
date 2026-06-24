@@ -41,6 +41,12 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /id="whatsapp-phone"/);
   assert.match(html, /id="whatsapp-default-contact"/);
   assert.match(html, /id="whatsapp-copy-button"/);
+  assert.match(html, /id="world-cup-button"/);
+  assert.match(html, /id="world-cup-panel"/);
+  assert.match(html, /id="world-cup-views"/);
+  assert.match(html, /id="world-cup-content"/);
+  assert.match(html, /data-view="groups"/);
+  assert.match(html, /data-view="bracket"/);
   assert.doesNotMatch(html, /type="date"/);
 });
 
@@ -65,7 +71,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v9/);
+  assert.match(serviceWorker, /jogos-hoje-v10/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);

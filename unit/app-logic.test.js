@@ -25,6 +25,11 @@ const {
   getStatusLabel,
   getWhatsAppPresetContact,
   mapEspnScoreboard,
+  mapEspnStandings,
+  mapEspnKnockout,
+  buildWorldCupStandingsUrl,
+  buildWorldCupKnockoutUrl,
+  getKnockoutRoundMeta,
   normalizeBroadcast,
   normalizeText,
   normalizeWhatsAppPhone,
@@ -329,17 +334,20 @@ test("normalizes string and object broadcasts", () => {
   );
 });
 
-test("adds CazéTV as guaranteed World Cup 2026 fallback only", () => {
+test("adds Brazilian World Cup 2026 broadcasters when the source is empty", () => {
   const worldCupBroadcasts = enrichBroadcastsForCompetition("Copa do Mundo 2026", []);
 
-  assert.deepEqual(worldCupBroadcasts, [
-    {
-      name: "CazéTV",
-      type: "streaming",
-      guaranteed: true,
-      source: "manual"
-    }
-  ]);
+  assert.deepEqual(worldCupBroadcasts.map(getBroadcastName), ["CazéTV", "Globo", "SporTV"]);
+
+  const caze = worldCupBroadcasts[0];
+  assert.equal(caze.guaranteed, true);
+  assert.equal(caze.source, "manual");
+
+  const habitual = worldCupBroadcasts.slice(1);
+  assert.equal(
+    habitual.every((broadcast) => broadcast.guaranteed === false && broadcast.source === "manual"),
+    true
+  );
 });
 
 test("fills habitual league broadcasts when the source is empty", () => {
@@ -798,4 +806,150 @@ test("maps ESPN halftime status to interval", () => {
 test("fallback data does not include demonstrative matches", () => {
   assert.deepEqual(FALLBACK_DATA.games, []);
   assert.equal(FALLBACK_DATA.source.type, "offline");
+});
+
+test("builds World Cup standings and knockout URLs", () => {
+  assert.equal(
+    buildWorldCupStandingsUrl(),
+    "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings?region=br&lang=pt"
+  );
+  assert.equal(
+    buildWorldCupKnockoutUrl({ start: "2026-06-28", end: "2026-07-20" }),
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260628-20260720&region=br&lang=pt"
+  );
+});
+
+test("maps ESPN World Cup standings into ordered group tables", () => {
+  const standings = {
+    children: [
+      {
+        name: "Grupo A",
+        standings: {
+          entries: [
+            {
+              team: { displayName: "Coreia do Sul", abbreviation: "KOR" },
+              note: { rank: 2, description: "Advance to Round of 32" },
+              stats: [
+                { type: "rank", displayValue: "2" },
+                { type: "gamesplayed", displayValue: "2" },
+                { type: "wins", displayValue: "1" },
+                { type: "ties", displayValue: "1" },
+                { type: "losses", displayValue: "0" },
+                { type: "pointsfor", displayValue: "3" },
+                { type: "pointsagainst", displayValue: "1" },
+                { type: "pointdifferential", displayValue: "+2" },
+                { type: "points", displayValue: "4" },
+                { type: "advanced", displayValue: "1" }
+              ]
+            },
+            {
+              team: { displayName: "México", abbreviation: "MEX" },
+              note: { rank: 1, description: "Advance to Round of 32" },
+              stats: [
+                { type: "rank", displayValue: "1" },
+                { type: "gamesplayed", displayValue: "2" },
+                { type: "wins", displayValue: "2" },
+                { type: "ties", displayValue: "0" },
+                { type: "losses", displayValue: "0" },
+                { type: "pointsfor", displayValue: "3" },
+                { type: "pointsagainst", displayValue: "0" },
+                { type: "pointdifferential", displayValue: "+3" },
+                { type: "points", displayValue: "6" },
+                { type: "advanced", displayValue: "1" }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  };
+
+  const groups = mapEspnStandings(standings);
+
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].name, "Grupo A");
+  assert.deepEqual(groups[0].teams.map((team) => team.name), ["México", "Coreia do Sul"]);
+
+  const leader = groups[0].teams[0];
+  assert.equal(leader.rank, 1);
+  assert.equal(leader.points, "6");
+  assert.equal(leader.played, "2");
+  assert.equal(leader.wins, "2");
+  assert.equal(leader.goalDifference, "+3");
+  assert.equal(leader.advancing, true);
+});
+
+test("groups ESPN World Cup knockout events by round in order", () => {
+  const scoreboard = {
+    events: [
+      {
+        id: "f1",
+        date: "2026-07-19T19:00Z",
+        season: { type: 13803 },
+        competitions: [
+          {
+            date: "2026-07-19T19:00Z",
+            status: { type: { state: "pre" } },
+            competitors: [
+              { homeAway: "home", team: { displayName: "Vencedor Semifinal 1" } },
+              { homeAway: "away", team: { displayName: "Vencedor Semifinal 2" } }
+            ]
+          }
+        ]
+      },
+      {
+        id: "r32a",
+        date: "2026-06-28T16:00Z",
+        season: { type: 13801 },
+        competitions: [
+          {
+            date: "2026-06-28T16:00Z",
+            status: { type: { state: "post", completed: true } },
+            competitors: [
+              { homeAway: "home", score: "2", winner: true, team: { displayName: "Brasil" } },
+              { homeAway: "away", score: "1", winner: false, team: { displayName: "Croácia" } }
+            ]
+          }
+        ]
+      }
+    ]
+  };
+
+  const rounds = mapEspnKnockout(scoreboard);
+
+  assert.deepEqual(rounds.map((round) => round.label), ["16 avos", "Final"]);
+
+  const r32 = rounds[0].matches[0];
+  assert.equal(r32.home, "Brasil");
+  assert.equal(r32.away, "Croácia");
+  assert.equal(r32.score, "2 x 1");
+  assert.equal(r32.status, "finished");
+  assert.equal(r32.homeWinner, true);
+  assert.equal(r32.awayWinner, false);
+});
+
+test("ignores knockout events with unknown round codes", () => {
+  const rounds = mapEspnKnockout({
+    events: [
+      {
+        id: "group",
+        date: "2026-06-15T16:00Z",
+        season: { type: 1 },
+        competitions: [
+          {
+            date: "2026-06-15T16:00Z",
+            status: { type: { state: "pre" } },
+            competitors: [
+              { homeAway: "home", team: { displayName: "A" } },
+              { homeAway: "away", team: { displayName: "B" } }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.deepEqual(rounds, []);
+  assert.equal(getKnockoutRoundMeta(13801).label, "16 avos");
+  assert.equal(getKnockoutRoundMeta(999), null);
 });
