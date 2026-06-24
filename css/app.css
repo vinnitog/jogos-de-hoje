@@ -23,12 +23,16 @@ html {
   background: var(--color-bg);
   color: var(--color-text);
   font-family: Arial, Helvetica, sans-serif;
+  /* Nenhum elemento pode gerar rolagem horizontal da pagina inteira. */
+  overflow-x: hidden;
 }
 
 body {
   min-height: 100%;
+  max-width: 100%;
   margin: 0;
   line-height: 1.5;
+  overflow-x: hidden;
 }
 
 button,
@@ -364,7 +368,7 @@ button {
 
 .competition-tabs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
   gap: 8px;
 }
 
@@ -372,17 +376,20 @@ button {
   display: inline-flex;
   min-height: 44px;
   width: 100%;
+  min-width: 0;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding: 8px 14px;
+  padding: 8px 12px;
   background: #ffffff;
   color: var(--color-primary-dark);
+  font-size: 0.95rem;
   font-weight: 800;
   line-height: 1.2;
   text-align: center;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .tab-button[aria-selected="true"] {
@@ -393,10 +400,19 @@ button {
 
 .list-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   padding: 14px 16px;
+}
+
+.list-header > div {
+  min-width: 0;
+}
+
+.list-header > div:first-child {
+  flex: 1 1 12rem;
 }
 
 .list-header strong {
@@ -406,8 +422,10 @@ button {
 
 .list-actions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -526,13 +544,14 @@ button {
 
 .text-button {
   display: inline-flex;
-  min-height: 48px;
+  min-height: 44px;
   align-items: center;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 8px 14px;
+  padding: 6px 12px;
   background: #ffffff;
   color: var(--color-primary-dark);
+  font-size: 0.9rem;
   font-weight: 800;
   line-height: 1.2;
   white-space: nowrap;
@@ -561,14 +580,14 @@ button {
 
 .icon-button {
   display: inline-grid;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 0;
   border-radius: var(--radius);
   background: var(--color-primary);
   color: #ffffff;
-  font-size: 1.35rem;
+  font-size: 1.3rem;
   font-weight: 800;
   transition: transform 160ms ease, background-color 160ms ease;
 }
