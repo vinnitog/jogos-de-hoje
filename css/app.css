@@ -42,6 +42,8 @@ button {
 
 .app-shell {
   min-height: 100vh;
+  /* Garante que so o chaveamento role na horizontal, nunca a pagina inteira. */
+  overflow-x: clip;
   background:
     radial-gradient(circle at top left, rgba(242, 193, 78, 0.28), transparent 28rem),
     linear-gradient(180deg, #0f5b45 0, #0f5b45 12.5rem, var(--color-bg) 12.5rem);
@@ -889,10 +891,17 @@ button {
   display: grid;
   gap: 14px;
   padding: 16px;
+  /* Impede que o chaveamento largo estique a grade da pagina:
+     o painel pode encolher e o scroll horizontal fica so dentro dele. */
+  min-width: 0;
 }
 
 .world-cup-panel[hidden] {
   display: none;
+}
+
+.world-cup-content {
+  min-width: 0;
 }
 
 .world-cup-header {
