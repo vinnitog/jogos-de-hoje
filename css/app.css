@@ -954,6 +954,7 @@ button {
   border-radius: var(--radius);
   padding: 12px;
   background: #ffffff;
+  overflow: hidden;
 }
 
 .wc-group__title {
@@ -964,14 +965,21 @@ button {
 .wc-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  /* Fixo evita que nomes longos empurrem as colunas numericas para fora do card. */
+  table-layout: fixed;
 }
 
 .wc-table th,
 .wc-table td {
-  padding: 6px 4px;
+  padding: 5px 1px;
   text-align: center;
-  white-space: nowrap;
+}
+
+/* Colunas numericas (P, J, V, E, D, SG) com largura fixa e estreita. */
+.wc-table th:nth-child(n + 3),
+.wc-table td:nth-child(n + 3) {
+  width: 1.55rem;
 }
 
 .wc-table thead th {
@@ -981,13 +989,16 @@ button {
 }
 
 .wc-table__pos {
-  width: 1.6rem;
+  width: 1.3rem;
   text-align: center;
 }
 
 .wc-table__team {
+  width: auto;
   text-align: left;
   white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
   font-weight: 700;
 }
 
@@ -1013,33 +1024,105 @@ button {
 
 .wc-bracket {
   display: flex;
-  gap: 14px;
+  gap: 4px;
+  align-items: stretch;
   overflow-x: auto;
   padding-bottom: 8px;
   -webkit-overflow-scrolling: touch;
 }
 
 .wc-bracket__round {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  min-width: 11rem;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-width: 12rem;
 }
 
 .wc-bracket__round-title {
-  margin: 0;
-  font-size: 0.82rem;
+  margin: 0 0 8px;
+  font-size: 0.78rem;
   color: var(--color-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  text-align: center;
+}
+
+/* Cada partida ocupa uma faixa de altura igual. Como cada fase tem metade dos
+   jogos da anterior, um jogo fica alinhado ao meio dos dois que o alimentam,
+   formando o chaveamento convergente. */
+.wc-bracket__matches {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wc-bracket__slot {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  padding-block: 5px;
+}
+
+/* Conectores em cotovelo, na canaleta direita das fases que alimentam a proxima. */
+.wc-bracket__round.is-feeder .wc-bracket__matches {
+  padding-right: 16px;
+}
+
+.wc-bracket__round.is-feeder .wc-bracket__slot::after {
+  content: "";
+  position: absolute;
+  left: 100%;
+  width: 14px;
+  border-right: 2px solid var(--color-border);
+}
+
+.wc-bracket__round.is-feeder .wc-bracket__slot:nth-child(odd)::after {
+  top: 50%;
+  height: 50%;
+  border-top: 2px solid var(--color-border);
+}
+
+.wc-bracket__round.is-feeder .wc-bracket__slot:nth-child(even)::after {
+  bottom: 50%;
+  height: 50%;
+  border-bottom: 2px solid var(--color-border);
+}
+
+/* Tracinho que entra na partida que recebe o confronto. */
+.wc-bracket__round + .wc-bracket__round .wc-bracket__slot::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  width: 6px;
+  height: 2px;
+  top: 50%;
+  background: var(--color-border);
+}
+
+.wc-bracket-extra {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.wc-bracket-extra .wc-bracket__round {
+  min-width: 0;
+  max-width: 16rem;
+}
+
+.wc-bracket-extra .wc-bracket__matches {
+  display: block;
 }
 
 .wc-match {
+  width: 100%;
   display: grid;
-  gap: 4px;
+  gap: 5px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 8px 10px;
+  padding: 8px;
   background: #ffffff;
 }
 
@@ -1054,34 +1137,63 @@ button {
 
 .wc-match__meta {
   color: var(--color-muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
+}
+
+.wc-match__row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.wc-flag {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--color-surface-strong);
+}
+
+.wc-flag img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .wc-match__team {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 700;
+  font-size: 0.84rem;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wc-match__pts {
+  min-width: 1.1rem;
+  font-weight: 800;
+  font-size: 0.86rem;
+  text-align: center;
   color: var(--color-text);
 }
 
-.wc-match__team.is-winner {
+.wc-match__row.is-winner .wc-match__team,
+.wc-match__row.is-winner .wc-match__pts {
   color: var(--color-primary-dark);
   font-weight: 800;
 }
 
-.wc-match__team.is-out {
+.wc-match__row.is-out .wc-match__team {
   color: var(--color-muted);
-  text-decoration: line-through;
 }
 
-.wc-match__score {
-  justify-self: start;
-  margin-top: 2px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--color-primary-dark);
-  color: #ffffff;
-  font-size: 0.78rem;
-  font-weight: 800;
+.wc-match__row.is-out .wc-match__pts {
+  color: var(--color-muted);
 }
 
 @media (min-width: 720px) {
