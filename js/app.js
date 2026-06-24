@@ -1193,12 +1193,17 @@ function getKnockoutRoundMeta(seasonType) {
   return WORLD_CUP_KNOCKOUT_ROUNDS[seasonType] || null;
 }
 
+function getTeamLogo(team = {}) {
+  return team.logos?.[0]?.href || team.logo || "";
+}
+
 function mapKnockoutMatch(event) {
   const game = mapEspnEvent(event, { name: WORLD_CUP_2026, slug: WORLD_CUP_SLUG });
   const competition = event.competitions?.[0] || {};
   const competitors = competition.competitors || [];
   const home = findCompetitor(competitors, "home") || competitors[0] || {};
   const away = findCompetitor(competitors, "away") || competitors[1] || {};
+  const showScore = hasScoreDisplay(game.status);
 
   return {
     id: game.id,
@@ -1208,6 +1213,12 @@ function mapKnockoutMatch(event) {
     score: game.score,
     home: game.home,
     away: game.away,
+    homeAbbr: home.team?.abbreviation || "",
+    awayAbbr: away.team?.abbreviation || "",
+    homeLogo: getTeamLogo(home.team),
+    awayLogo: getTeamLogo(away.team),
+    homeScore: showScore && home.score != null ? String(home.score) : "",
+    awayScore: showScore && away.score != null ? String(away.score) : "",
     homeWinner: Boolean(home.winner),
     awayWinner: Boolean(away.winner)
   };
@@ -1869,12 +1880,34 @@ function renderWorldCupGroups(container) {
   container.append(grid);
 }
 
-function createBracketTeamRow(name, { winner, eliminated } = {}) {
-  const row = document.createElement("span");
-  row.className = "wc-match__team";
+function createBracketTeamRow(name, options = {}) {
+  const { logo, score, winner, eliminated } = options;
+  const row = document.createElement("div");
+  row.className = "wc-match__row";
   row.classList.toggle("is-winner", Boolean(winner));
   row.classList.toggle("is-out", Boolean(eliminated));
-  row.textContent = name || "A definir";
+
+  const crest = document.createElement("span");
+  crest.className = "wc-flag";
+  if (logo) {
+    const img = document.createElement("img");
+    img.src = logo;
+    img.alt = "";
+    img.loading = "lazy";
+    crest.append(img);
+  }
+  row.append(crest);
+
+  const label = document.createElement("span");
+  label.className = "wc-match__team";
+  label.textContent = name || "A definir";
+  row.append(label);
+
+  const points = document.createElement("span");
+  points.className = "wc-match__pts";
+  points.textContent = score ?? "";
+  row.append(points);
+
   return row;
 }
 
@@ -1895,25 +1928,45 @@ function createBracketMatch(match) {
   const finished = match.status === "finished";
   card.append(
     createBracketTeamRow(match.home, {
+      logo: match.homeLogo,
+      score: match.homeScore,
       winner: match.homeWinner,
       eliminated: finished && match.awayWinner
     })
   );
   card.append(
     createBracketTeamRow(match.away, {
+      logo: match.awayLogo,
+      score: match.awayScore,
       winner: match.awayWinner,
       eliminated: finished && match.homeWinner
     })
   );
 
-  if (hasScoreDisplay(match.status) && match.score) {
-    const score = document.createElement("span");
-    score.className = "wc-match__score";
-    score.textContent = match.score;
-    card.append(score);
-  }
-
   return card;
+}
+
+function createBracketColumn(round, { feeder = false } = {}) {
+  const column = document.createElement("div");
+  column.className = "wc-bracket__round";
+  column.classList.toggle("is-feeder", feeder);
+
+  const title = document.createElement("h4");
+  title.className = "wc-bracket__round-title";
+  title.textContent = round.label;
+  column.append(title);
+
+  const matches = document.createElement("div");
+  matches.className = "wc-bracket__matches";
+  round.matches.forEach((match) => {
+    const slot = document.createElement("div");
+    slot.className = "wc-bracket__slot";
+    slot.append(createBracketMatch(match));
+    matches.append(slot);
+  });
+  column.append(matches);
+
+  return column;
 }
 
 function renderWorldCupBracket(container) {
@@ -1928,23 +1981,24 @@ function renderWorldCupBracket(container) {
     return;
   }
 
+  // O 3o lugar nao faz parte da arvore principal: vai num bloco separado.
+  const thirdPlace = rounds.find((round) => round.label === "3º lugar");
+  const mainRounds = rounds.filter((round) => round.label !== "3º lugar");
+
   const board = document.createElement("div");
   board.className = "wc-bracket";
-
-  rounds.forEach((round) => {
-    const column = document.createElement("div");
-    column.className = "wc-bracket__round";
-
-    const title = document.createElement("h4");
-    title.className = "wc-bracket__round-title";
-    title.textContent = round.label;
-    column.append(title);
-
-    round.matches.forEach((match) => column.append(createBracketMatch(match)));
-    board.append(column);
+  mainRounds.forEach((round, index) => {
+    // Toda coluna, menos a final, alimenta a proxima: desenha os conectores.
+    board.append(createBracketColumn(round, { feeder: index < mainRounds.length - 1 }));
   });
-
   container.append(board);
+
+  if (thirdPlace) {
+    const aside = document.createElement("div");
+    aside.className = "wc-bracket-extra";
+    aside.append(createBracketColumn(thirdPlace));
+    container.append(aside);
+  }
 }
 
 function renderWorldCupPanel() {
