@@ -1,4 +1,4 @@
-const CACHE_NAME = "jogos-hoje-v9";
+const CACHE_NAME = "jogos-hoje-v10";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
 const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
@@ -396,7 +396,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (request.url.includes("site.api.espn.com/apis/site/v2/sports/soccer")) {
+  if (
+    request.url.includes("site.api.espn.com") &&
+    request.url.includes("/sports/soccer")
+  ) {
     event.respondWith(
       fetch(request)
         .then((response) => {

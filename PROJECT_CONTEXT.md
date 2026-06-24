@@ -78,6 +78,27 @@ Regras desse mapa:
 - A CazeTV na Copa do Mundo 2026 permanece como `guaranteed: true` e entra sempre, inclusive junto de canais da fonte.
 - O mapa reflete os direitos vigentes no Brasil e deve ser revisado a cada temporada, pois os contratos mudam por ano.
 
+Decisao revisada (2026-06-24) - Transmissao da Copa 2026:
+
+Os direitos da Copa do Mundo 2026 no Brasil sao divididos entre Globo (TV aberta),
+SporTV (TV fechada) e CazeTV (streaming). O mapa `LEAGUE_DEFAULT_BROADCASTS` para
+`fifa.world` passa a incluir Globo e SporTV como transmissoes habituais (chip tracejado,
+`guaranteed: false`), alem da CazeTV garantida. As habituais so entram quando a ESPN nao
+trouxer canais por jogo; quando a fonte informar a grade do jogo, ela tem prioridade.
+
+Feature (2026-06-24) - Tabela e chaveamento da Copa 2026:
+
+- Botao "Copa 2026" abre um painel com duas visoes: "Grupos" (classificacao dos 12 grupos)
+  e "Chaveamento" (mata-mata).
+- Classificacao: `https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings`
+  (`region=br`, `lang=pt`). Mapeada por `mapEspnStandings` em colunas P/J/V/E/D/SG, com
+  destaque para os classificados (`advanced`).
+- Chaveamento: scoreboard com intervalo de datas da fase eliminatoria
+  (`dates=AAAAMMDD-AAAAMMDD`), agrupado por `season.type` (16avos -> Final) em
+  `mapEspnKnockout`. Vencedor de cada jogo encerrado fica destacado.
+- O painel recarrega junto do auto-refresh dos jogos (resultados atualizam ao fim de
+  cada partida) e respeita um intervalo minimo de cache de 90s.
+
 Atualizacao automatica:
 
 - Jogos ao vivo: atualizar no maximo a cada 90 segundos.

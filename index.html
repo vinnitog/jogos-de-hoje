@@ -120,6 +120,9 @@
             </div>
           </div>
           <div class="list-actions">
+            <button class="text-button" id="world-cup-button" type="button" aria-expanded="false" aria-controls="world-cup-panel" title="Tabela e chaveamento da Copa 2026">
+              Copa 2026
+            </button>
             <button class="icon-button icon-button--whatsapp" id="whatsapp-button" type="button" aria-label="Enviar agenda pelo WhatsApp" title="Enviar agenda pelo WhatsApp">
               <span aria-hidden="true">WA</span>
             </button>
@@ -158,6 +161,21 @@
             </div>
           </form>
           <p class="share-status" id="whatsapp-status" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="world-cup-panel" id="world-cup-panel" aria-labelledby="world-cup-title" hidden>
+          <div class="world-cup-header">
+            <div class="share-heading">
+              <p class="eyebrow">Copa do Mundo 2026</p>
+              <h2 id="world-cup-title">Tabela e chaveamento</h2>
+            </div>
+            <button class="secondary-button" id="world-cup-refresh" type="button">Atualizar</button>
+          </div>
+          <div class="wc-views" id="world-cup-views" role="tablist" aria-label="Visualização da Copa 2026">
+            <button class="wc-view-tab is-active" type="button" role="tab" data-view="groups" aria-selected="true">Grupos</button>
+            <button class="wc-view-tab" type="button" role="tab" data-view="bracket" aria-selected="false">Chaveamento</button>
+          </div>
+          <div class="world-cup-content" id="world-cup-content" aria-live="polite"></div>
         </section>
 
         <section class="game-list" id="game-list" aria-label="Lista de jogos"></section>
