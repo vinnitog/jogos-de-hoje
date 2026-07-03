@@ -1251,6 +1251,46 @@ function getTeamLogo(team = {}) {
   return team.logos?.[0]?.href || team.logo || "";
 }
 
+// Mapa dos codigos de pais da ESPN (basename do PNG em .../countries/500/XXX.png)
+// para ISO 3166-1 alpha-2, usados pelo flagcdn.com. A ESPN entrega as bandeiras
+// via a.espncdn.com, que costuma nao resolver em alguns provedores no Brasil
+// (ERR_NAME_NOT_RESOLVED). O flagcdn e um CDN publico estavel de bandeiras.
+const ESPN_CODE_TO_ISO2 = {
+  alg: "dz", ang: "ao", arg: "ar", aus: "au", aut: "at", bel: "be", bfa: "bf",
+  bih: "ba", bra: "br", cmr: "cm", can: "ca", chi: "cl", civ: "ci", cod: "cd",
+  col: "co", cpv: "cv", crc: "cr", cro: "hr", cze: "cz", den: "dk", ecu: "ec",
+  egy: "eg", eng: "gb-eng", esp: "es", fra: "fr", ger: "de", gha: "gh",
+  gre: "gr", hai: "ht", hon: "hn", irn: "ir", irq: "iq", isl: "is", ita: "it",
+  jam: "jm", jpn: "jp", jor: "jo", kor: "kr", kors: "kr", ksa: "sa", mar: "ma",
+  mex: "mx", mli: "ml", ned: "nl", ngr: "ng", nga: "ng", nor: "no", nzl: "nz",
+  pan: "pa", par: "py", per: "pe", pol: "pl", por: "pt", qat: "qa", rdc: "cd",
+  rou: "ro", rsa: "za", sco: "gb-sct", sen: "sn", srb: "rs", sui: "ch",
+  svk: "sk", svn: "si", swe: "se", tun: "tn", tur: "tr", uae: "ae", uga: "ug",
+  ukr: "ua", uru: "uy", usa: "us", uzb: "uz", ven: "ve", wal: "gb-wls"
+};
+
+// Extrai o codigo de pais de uma URL de logo da ESPN e devolve a bandeira
+// equivalente no flagcdn. Retorna "" quando nao ha mapeamento conhecido.
+function getFlagFallbackUrl(logoUrl) {
+  const match = /\/countries\/\d+\/([a-z]+)\.png/i.exec(String(logoUrl || ""));
+  const iso2 = match ? ESPN_CODE_TO_ISO2[match[1].toLowerCase()] : null;
+  return iso2 ? `https://flagcdn.com/w80/${iso2}.png` : "";
+}
+
+// Ordena as fontes da bandeira: quando ha equivalente no flagcdn, ele vai como
+// primaria (estavel) e a URL da ESPN fica de reserva; sem mapeamento, tenta a
+// ESPN direto. Assim a UI nao depende de um unico CDN.
+function getFlagSources(espnLogoUrl) {
+  const cdn = getFlagFallbackUrl(espnLogoUrl);
+  const espn = String(espnLogoUrl || "");
+
+  if (cdn) {
+    return { primary: cdn, fallback: espn };
+  }
+
+  return { primary: espn, fallback: "" };
+}
+
 function mapKnockoutMatch(event) {
   const game = mapEspnEvent(event, { name: WORLD_CUP_2026, slug: WORLD_CUP_SLUG });
   const competition = event.competitions?.[0] || {};
@@ -1935,6 +1975,20 @@ function renderWorldCupGroups(container) {
   container.append(grid);
 }
 
+function handleFlagImageError(event) {
+  const img = event.currentTarget;
+  const fallback = img.dataset.fallback;
+
+  if (fallback && img.getAttribute("src") !== fallback) {
+    img.dataset.fallback = "";
+    img.src = fallback;
+    return;
+  }
+
+  img.removeEventListener("error", handleFlagImageError);
+  img.remove();
+}
+
 function createBracketTeamRow(name, options = {}) {
   const { logo, score, winner, eliminated } = options;
   const row = document.createElement("div");
@@ -1945,10 +1999,15 @@ function createBracketTeamRow(name, options = {}) {
   const crest = document.createElement("span");
   crest.className = "wc-flag";
   if (logo) {
+    const sources = getFlagSources(logo);
     const img = document.createElement("img");
-    img.src = logo;
+    img.src = sources.primary;
     img.alt = "";
     img.loading = "lazy";
+    img.dataset.fallback = sources.fallback;
+    // Se a fonte primaria falhar, tenta a reserva uma vez; se ainda falhar,
+    // remove a imagem para nao exibir icone quebrado nem repetir erro no console.
+    img.addEventListener("error", handleFlagImageError);
     crest.append(img);
   }
   row.append(crest);
@@ -2305,6 +2364,8 @@ if (typeof module !== "undefined") {
     detectGoalEvents,
     extractLiveClock,
     getStatusDisplayLabel,
+    getFlagFallbackUrl,
+    getFlagSources,
     formatBroadcastsForShare,
     formatDateDisplayParts,
     formatGamesShareMessage,
