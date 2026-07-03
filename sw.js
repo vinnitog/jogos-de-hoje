@@ -1,4 +1,4 @@
-const CACHE_NAME = "jogos-hoje-v10";
+const CACHE_NAME = "jogos-hoje-v11";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
 const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
@@ -120,6 +120,33 @@ function buildScoreboardUrl(slug, dateISO) {
   return `${ESPN_API_BASE}/${slug}/scoreboard?${params.toString()}`;
 }
 
+function shiftDateISO(dateISO, days) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateISO || ""));
+  const base = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date();
+  base.setDate(base.getDate() + days);
+  const year = base.getFullYear();
+  const month = String(base.getMonth() + 1).padStart(2, "0");
+  const day = String(base.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// A ESPN agrupa eventos por fuso proprio (UTC/ET), nao America/Sao_Paulo. Jogos
+// tarde da noite no Brasil caem no dia seguinte na fonte. Buscamos D-1..D+1 para
+// nao perder placares ao vivo na deteccao de gols em background.
+function buildScoreboardRangeUrl(slug, dateISO, daysAround = 1) {
+  const params = new URLSearchParams({
+    dates: `${toEspnDate(shiftDateISO(dateISO, -daysAround))}-${toEspnDate(
+      shiftDateISO(dateISO, daysAround)
+    )}`,
+    region: "br",
+    lang: "pt"
+  });
+
+  return `${ESPN_API_BASE}/${slug}/scoreboard?${params.toString()}`;
+}
+
 function mapEspnStatus(statusType = {}) {
   const statusName = normalizeText(statusType.name);
   const description = normalizeText(statusType.description);
@@ -176,7 +203,7 @@ function mapEspnEvent(event, league) {
 }
 
 async function fetchLeagueGames(league, dateISO) {
-  const response = await fetch(buildScoreboardUrl(league.slug, dateISO), {
+  const response = await fetch(buildScoreboardRangeUrl(league.slug, dateISO), {
     cache: "no-store"
   });
 

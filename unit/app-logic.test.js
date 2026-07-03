@@ -6,8 +6,11 @@ const {
   FALLBACK_DATA,
   LEAGUES,
   buildScoreboardUrl,
+  buildScoreboardRangeUrl,
   buildWhatsAppUrl,
   detectGoalEvents,
+  extractLiveClock,
+  getStatusDisplayLabel,
   enrichBroadcastsForCompetition,
   filterGames,
   formatBroadcastsForShare,
@@ -729,6 +732,105 @@ test("builds localized ESPN scoreboard URLs", () => {
     url,
     "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260615&region=br&lang=pt"
   );
+});
+
+test("scoreboard range URL covers the day before and after to fix timezone gaps", () => {
+  const url = buildScoreboardRangeUrl("bra.1", "2026-06-15");
+
+  assert.equal(
+    url,
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard?dates=20260614-20260616&region=br&lang=pt"
+  );
+
+  // Cobre virada de mes/ano corretamente.
+  assert.match(
+    buildScoreboardRangeUrl("bra.1", "2026-12-31"),
+    /dates=20261230-20270101/
+  );
+});
+
+test("late-night Brazilian kickoff maps to the correct local date", () => {
+  // 22:00 BRT do dia 15 = 01:00Z do dia 16. A fonte pode indexar no dia 16,
+  // mas a data-Brasil precisa continuar sendo o dia 15.
+  const games = mapEspnScoreboard(
+    {
+      events: [
+        {
+          id: "night-1",
+          date: "2026-06-16T01:00Z",
+          competitions: [
+            {
+              date: "2026-06-16T01:00Z",
+              status: { type: { state: "pre" } },
+              competitors: [
+                { homeAway: "home", team: { displayName: "Corinthians" } },
+                { homeAway: "away", team: { displayName: "Santos" } }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    { name: "Brasileirão Série A", slug: "bra.1" }
+  );
+
+  assert.equal(games[0].date, "2026-06-15");
+  assert.equal(games[0].time, "22:00");
+  assert.equal(filterGames(games, { selectedDate: "2026-06-15" }).length, 1);
+});
+
+test("extracts the live match clock from ESPN status", () => {
+  assert.equal(
+    extractLiveClock({ type: { state: "in" }, displayClock: "67'" }),
+    "67'"
+  );
+  assert.equal(
+    extractLiveClock({ type: { state: "in", shortDetail: "1st Half" }, displayClock: "" }),
+    "1st Half"
+  );
+  // Placeholder sem tempo cai para o detalhe do periodo, se houver.
+  assert.equal(
+    extractLiveClock({ type: { state: "in", shortDetail: "1st Half" }, displayClock: "0'" }),
+    "1st Half"
+  );
+  // Jogo que nao esta em andamento nao tem tempo.
+  assert.equal(extractLiveClock({ type: { state: "pre" }, displayClock: "67'" }), "");
+  assert.equal(extractLiveClock({ type: { state: "post" }, displayClock: "90'" }), "");
+});
+
+test("maps the live clock into the game and status label", () => {
+  const games = mapEspnScoreboard(
+    {
+      events: [
+        {
+          id: "live-1",
+          date: "2026-06-15T19:00Z",
+          competitions: [
+            {
+              date: "2026-06-15T19:00Z",
+              status: {
+                displayClock: "72'",
+                period: 2,
+                type: { state: "in", name: "STATUS_IN_PROGRESS", shortDetail: "72'" }
+              },
+              competitors: [
+                { homeAway: "home", score: "1", team: { displayName: "Palmeiras" } },
+                { homeAway: "away", score: "0", team: { displayName: "Flamengo" } }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    { name: "Brasileirão Série A", slug: "bra.1" }
+  );
+
+  assert.equal(games[0].status, "live");
+  assert.equal(games[0].clock, "72'");
+  assert.equal(getStatusDisplayLabel(games[0]), "Ao vivo · 72'");
+  // Sem tempo informado, mantem apenas o rotulo.
+  assert.equal(getStatusDisplayLabel({ status: "live", clock: "" }), "Ao vivo");
+  assert.equal(getStatusDisplayLabel({ status: "scheduled" }), "Programado");
 });
 
 test("maps ESPN scoreboard events to app games", () => {

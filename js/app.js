@@ -252,6 +252,23 @@ function buildScoreboardUrl(slug, dateISO) {
   return `${ESPN_API_BASE}/${slug}/scoreboard?${params.toString()}`;
 }
 
+// A ESPN agrupa os eventos por um fuso proprio (UTC/ET), nao America/Sao_Paulo.
+// Um jogo tarde da noite no Brasil (ex.: 21:30 BRT = 00:30 UTC do dia seguinte)
+// pode ser indexado pela ESPN no dia seguinte e sumir quando pedimos so um dia.
+// Por isso buscamos uma janela D-1..D+1 e deixamos o filtro por data-Brasil
+// (getDateISOInTimeZone + filterGames) escolher o dia certo de cada jogo.
+function buildScoreboardRangeUrl(slug, dateISO, daysAround = 1) {
+  const startISO = shiftDateISO(dateISO, -daysAround);
+  const endISO = shiftDateISO(dateISO, daysAround);
+  const params = new URLSearchParams({
+    dates: `${toEspnDate(startISO)}-${toEspnDate(endISO)}`,
+    region: "br",
+    lang: "pt"
+  });
+
+  return `${ESPN_API_BASE}/${slug}/scoreboard?${params.toString()}`;
+}
+
 function normalizeText(value) {
   return String(value || "")
     .normalize("NFD")
@@ -1039,6 +1056,19 @@ function isGameInProgress(status) {
   return ["live", "halftime"].includes(status);
 }
 
+// Rotulo do status considerando o tempo de jogo ao vivo (ex.: "Ao vivo · 67'").
+// So agrega o minuto quando o jogo esta "live" e a fonte informou o tempo.
+function getStatusDisplayLabel(game = {}) {
+  const label = getStatusLabel(game.status);
+  const clock = String(game.clock || "").trim();
+
+  if (game.status === "live" && clock) {
+    return `${label} · ${clock}`;
+  }
+
+  return label;
+}
+
 function hasScoreDisplay(status) {
   return ["live", "halftime", "finished"].includes(status);
 }
@@ -1106,12 +1136,35 @@ function extractBroadcasts(competition = {}) {
   return [...new Set([...broadcastNames, ...geoBroadcastNames])];
 }
 
+// Extrai o tempo de jogo (minuto) de uma partida ao vivo a partir do status da
+// ESPN. Preferimos displayClock (ex.: "67'", "90'+2'"); se vier vazio, usamos o
+// shortDetail do tipo (ex.: "1st Half"). So retorna algo para jogos "in".
+function extractLiveClock(statusRaw = {}) {
+  const type = statusRaw.type || {};
+
+  if (type.state !== "in") {
+    return "";
+  }
+
+  const displayClock = String(statusRaw.displayClock || "").trim();
+  const shortDetail = String(type.shortDetail || type.detail || "").trim();
+  const candidate = displayClock || shortDetail;
+
+  // Ignora placeholders sem informacao de tempo (ex.: "0'", "0:00").
+  if (!candidate || /^0+('|:00)?$/.test(candidate)) {
+    return shortDetail && shortDetail !== candidate ? shortDetail : "";
+  }
+
+  return candidate;
+}
+
 function mapEspnEvent(event, league) {
   const competition = event.competitions?.[0] || {};
   const competitors = competition.competitors || [];
   const home = findCompetitor(competitors, "home") || competitors[0] || {};
   const away = findCompetitor(competitors, "away") || competitors[1] || {};
-  const status = mapEspnStatus(competition.status?.type || event.status?.type || {});
+  const statusRaw = competition.status || event.status || {};
+  const status = mapEspnStatus(statusRaw.type || {});
   const kickoff = competition.date || event.date;
   const homeScore = home.score;
   const awayScore = away.score;
@@ -1128,6 +1181,7 @@ function mapEspnEvent(event, league) {
     venue: formatVenue(competition.venue || event.venue),
     status,
     score,
+    clock: status === "live" ? extractLiveClock(statusRaw) : "",
     broadcasts: enrichBroadcastsForCompetition(league.name, extractBroadcasts(competition)),
     sourceUrl: event.links?.find((link) => link.rel?.includes("summary"))?.href || ""
   };
@@ -1210,6 +1264,7 @@ function mapKnockoutMatch(event) {
     date: game.date,
     time: game.time,
     status: game.status,
+    clock: game.clock,
     score: game.score,
     home: game.home,
     away: game.away,
@@ -1307,7 +1362,7 @@ async function loadWorldCupData(options = {}) {
 }
 
 async function fetchLeagueGames(league, dateISO) {
-  const response = await fetch(buildScoreboardUrl(league.slug, dateISO), {
+  const response = await fetch(buildScoreboardRangeUrl(league.slug, dateISO), {
     cache: "no-store"
   });
 
@@ -1582,7 +1637,7 @@ function renderGameCard(game) {
   const gameBroadcasts = getNormalizedBroadcasts(game.broadcasts);
 
   card.querySelector(".competition").textContent = game.competition;
-  status.textContent = getStatusLabel(game.status);
+  status.textContent = getStatusDisplayLabel(game);
   status.classList.toggle("is-live", isGameInProgress(game.status));
   status.classList.toggle("is-finished", game.status === "finished");
   card.querySelector(".home-team").textContent = game.home;
@@ -1921,7 +1976,7 @@ function createBracketMatch(match) {
   meta.className = "wc-match__meta";
   const dateLabel = formatDateDisplayParts(match.date).dateLabel;
   meta.textContent = hasScoreDisplay(match.status)
-    ? `${dateLabel} · ${getStatusLabel(match.status)}`
+    ? `${dateLabel} · ${getStatusDisplayLabel(match)}`
     : `${dateLabel} · ${match.time || "--:--"}`;
   card.append(meta);
 
@@ -2246,7 +2301,10 @@ if (typeof module !== "undefined") {
     LEAGUES,
     buildWhatsAppUrl,
     buildScoreboardUrl,
+    buildScoreboardRangeUrl,
     detectGoalEvents,
+    extractLiveClock,
+    getStatusDisplayLabel,
     formatBroadcastsForShare,
     formatDateDisplayParts,
     formatGamesShareMessage,
