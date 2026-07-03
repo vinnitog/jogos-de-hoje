@@ -99,6 +99,28 @@ Feature (2026-06-24) - Tabela e chaveamento da Copa 2026:
 - O painel recarrega junto do auto-refresh dos jogos (resultados atualizam ao fim de
   cada partida) e respeita um intervalo minimo de cache de 90s.
 
+Decisao revisada (2026-07-03) - Bandeiras das selecoes com fallback:
+
+A ESPN entrega os escudos/bandeiras via `a.espncdn.com` (ex.:
+`.../teamlogos/countries/500/bra.png`). Esse host costuma nao resolver em alguns
+provedores no Brasil (`ERR_NAME_NOT_RESOLVED`), deixando o chaveamento da Copa
+cheio de imagens quebradas e erros no console. Nao e falha do app: a URL da fonte
+esta correta.
+
+Solucao: mapa `ESPN_CODE_TO_ISO2` converte o codigo de pais da ESPN para ISO
+3166-1 alpha-2 e monta a bandeira no `flagcdn.com` (CDN publico estavel). O
+flagcdn entra como fonte primaria quando ha equivalente; a URL da ESPN fica de
+reserva. Se ambas falharem, a `<img>` e removida (sem icone quebrado nem erro
+repetido). Precisa ser primaria a bandeira ainda tenta a reserva uma unica vez.
+
+Janela de datas na fonte (2026-07-03):
+
+A ESPN agrupa eventos por fuso proprio (UTC/ET), nao `America/Sao_Paulo`. Jogos
+tarde da noite no Brasil caiam no dia seguinte na fonte e sumiam da lista. O app
+e o service worker passam a buscar a janela `D-1..D+1` (`buildScoreboardRangeUrl`)
+e o filtro por data-Brasil escolhe o dia certo de cada jogo. O card exibe o tempo
+de jogo ao vivo (`status.displayClock`, ex.: "Ao vivo - 67'").
+
 Atualizacao automatica:
 
 - Jogos ao vivo: atualizar no maximo a cada 90 segundos.
