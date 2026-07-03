@@ -11,6 +11,8 @@ const {
   detectGoalEvents,
   extractLiveClock,
   getStatusDisplayLabel,
+  getFlagFallbackUrl,
+  getFlagSources,
   enrichBroadcastsForCompetition,
   filterGames,
   formatBroadcastsForShare,
@@ -831,6 +833,44 @@ test("maps the live clock into the game and status label", () => {
   // Sem tempo informado, mantem apenas o rotulo.
   assert.equal(getStatusDisplayLabel({ status: "live", clock: "" }), "Ao vivo");
   assert.equal(getStatusDisplayLabel({ status: "scheduled" }), "Programado");
+});
+
+test("builds a flagcdn fallback from ESPN country logo URLs", () => {
+  assert.equal(
+    getFlagFallbackUrl("https://a.espncdn.com/i/teamlogos/countries/500/bra.png"),
+    "https://flagcdn.com/w80/br.png"
+  );
+  // Codigos nao-ISO da FIFA sao mapeados corretamente.
+  assert.equal(
+    getFlagFallbackUrl("https://a.espncdn.com/i/teamlogos/countries/500/ger.png"),
+    "https://flagcdn.com/w80/de.png"
+  );
+  assert.equal(
+    getFlagFallbackUrl("https://a.espncdn.com/i/teamlogos/countries/500/eng.png"),
+    "https://flagcdn.com/w80/gb-eng.png"
+  );
+  assert.equal(
+    getFlagFallbackUrl("https://a.espncdn.com/i/teamlogos/countries/500/rdc.png"),
+    "https://flagcdn.com/w80/cd.png"
+  );
+  // Sem mapeamento conhecido ou URL fora do padrao: sem fallback.
+  assert.equal(getFlagFallbackUrl("https://a.espncdn.com/i/teamlogos/countries/500/zzz.png"), "");
+  assert.equal(getFlagFallbackUrl("https://a.espncdn.com/i/leaguelogos/soccer/500/4.png"), "");
+  assert.equal(getFlagFallbackUrl(""), "");
+});
+
+test("orders flag sources with a stable CDN first and ESPN as reserve", () => {
+  assert.deepEqual(
+    getFlagSources("https://a.espncdn.com/i/teamlogos/countries/500/por.png"),
+    {
+      primary: "https://flagcdn.com/w80/pt.png",
+      fallback: "https://a.espncdn.com/i/teamlogos/countries/500/por.png"
+    }
+  );
+
+  // Sem equivalente no flagcdn, mantem a URL da ESPN como primaria.
+  const unknown = "https://a.espncdn.com/i/teamlogos/countries/500/zzz.png";
+  assert.deepEqual(getFlagSources(unknown), { primary: unknown, fallback: "" });
 });
 
 test("maps ESPN scoreboard events to app games", () => {
