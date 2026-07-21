@@ -151,7 +151,7 @@ function createHarness({ fetchImpl } = {}) {
   }
 
   async function readGoalState() {
-    const cache = await caches.open("jogos-hoje-v12");
+    const cache = await caches.open("jogos-hoje-v13");
     const response = await cache.match("https://jogos-hoje.local/goal-notification-state");
     return response ? response.json() : null;
   }
