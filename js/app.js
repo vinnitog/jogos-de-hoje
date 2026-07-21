@@ -114,7 +114,6 @@ const state = {
   selectedDate: getTodayISO(),
   calendarMonthDate: getTodayISO(),
   selectedCompetition: "Todos",
-  query: "",
   whatsAppPhone: readWhatsAppPhonePreference(),
   selectedWhatsAppPresetContactId: "",
   goalNotificationsEnabled: readGoalNotificationsPreference(),
@@ -704,28 +703,11 @@ function detectGoalEvents(previousGames = [], nextGames = []) {
     .filter(Boolean);
 }
 
-function getGoalNotificationStatusText() {
-  if (!isGoalNotificationSupported()) {
-    return "Gols: indisponivel";
-  }
-
-  if (Notification.permission === "denied") {
-    return "Gols: bloqueado";
-  }
-
-  if (areGoalNotificationsActive()) {
-    return "Gols: ligado";
-  }
-
-  return "Gols: desligado";
-}
-
 function renderGoalNotificationToggle() {
   const toggle = document.querySelector("#goal-notifications-toggle");
-  const status = document.querySelector("#goal-notification-status");
   const control = document.querySelector("#goal-notification-control");
 
-  if (!toggle || !status) {
+  if (!toggle) {
     return;
   }
 
@@ -735,7 +717,6 @@ function renderGoalNotificationToggle() {
 
   toggle.checked = active;
   toggle.disabled = !supported || blocked;
-  status.textContent = getGoalNotificationStatusText();
   control?.classList.toggle("is-on", active);
   control?.classList.toggle("is-blocked", blocked);
   control?.classList.toggle("is-disabled", !supported);
@@ -820,23 +801,6 @@ function sortGamesByTime(games) {
   });
 }
 
-function gameMatchesQuery(game, query) {
-  const normalizedQuery = normalizeText(query);
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  const searchable = [
-    game.home,
-    game.away,
-    game.venue,
-    game.competition,
-    ...(game.broadcasts || []).map(getBroadcastName)
-  ].join(" ");
-
-  return normalizeText(searchable).includes(normalizedQuery);
-}
-
 function getBroadcastName(broadcast) {
   if (typeof broadcast === "string") {
     return broadcast;
@@ -917,7 +881,6 @@ function enrichBroadcastsForCompetition(competition, broadcasts = []) {
 function filterGames(games, filters) {
   const selectedDate = filters.selectedDate;
   const selectedCompetition = filters.selectedCompetition || "Todos";
-  const query = filters.query || "";
 
   return sortGamesByTime(
     games.filter((game) => {
@@ -925,7 +888,7 @@ function filterGames(games, filters) {
       const matchesCompetition =
         selectedCompetition === "Todos" || game.competition === selectedCompetition;
 
-      return matchesDate && matchesCompetition && gameMatchesQuery(game, query);
+      return matchesDate && matchesCompetition;
     })
   );
 }
@@ -1717,17 +1680,6 @@ function renderSummary(games) {
   setText("#summary-tv", String(summary.withBroadcast));
 }
 
-function renderConnectionStatus() {
-  const element = document.querySelector("#connection-status");
-  if (!element) {
-    return;
-  }
-
-  const isOnline = navigator.onLine;
-  element.textContent = isOnline ? "Online" : "Offline";
-  element.classList.toggle("is-offline", !isOnline);
-}
-
 function getCurrentFilteredGames() {
   return filterGames(state.data.games || [], state);
 }
@@ -2117,7 +2069,6 @@ function renderWorldCupBracket(container) {
 
 function renderWorldCupPanel() {
   const panel = document.querySelector("#world-cup-panel");
-  const button = document.querySelector("#world-cup-button");
 
   if (!panel) {
     return;
@@ -2125,8 +2076,6 @@ function renderWorldCupPanel() {
 
   const wc = state.worldCup;
   panel.hidden = !wc.open;
-  button?.classList.toggle("is-active", wc.open);
-  button?.setAttribute("aria-expanded", String(wc.open));
 
   if (!wc.open) {
     return;
@@ -2182,13 +2131,11 @@ function renderApp() {
   const filteredGames = getCurrentFilteredGames();
   renderGames(filteredGames);
   renderSummary(filteredGames);
-  renderConnectionStatus();
   renderAutoRefreshStatus();
   renderGoalNotificationToggle();
   renderWhatsAppPanel();
   renderWorldCupPanel();
   setText("#updated-at", formatDateTime(state.data.updatedAt));
-  setText("#source-label", state.data.source?.label || "Fonte não informada");
 }
 
 async function refreshData(options = {}) {
@@ -2253,7 +2200,6 @@ function bindEvents() {
   const dateToday = document.querySelector("#date-today");
   const prevMonth = document.querySelector("#calendar-prev-month");
   const nextMonth = document.querySelector("#calendar-next-month");
-  const searchFilter = document.querySelector("#search-filter");
   const refreshButton = document.querySelector("#refresh-button");
   const whatsAppButton = document.querySelector("#whatsapp-button");
   const whatsAppForm = document.querySelector("#whatsapp-form");
@@ -2261,7 +2207,6 @@ function bindEvents() {
   const whatsAppPresetButton = document.querySelector("#whatsapp-default-contact");
   const whatsAppCopyButton = document.querySelector("#whatsapp-copy-button");
   const goalNotificationsToggle = document.querySelector("#goal-notifications-toggle");
-  const worldCupButton = document.querySelector("#world-cup-button");
   const worldCupViews = document.querySelector("#world-cup-views");
   const worldCupRefresh = document.querySelector("#world-cup-refresh");
 
@@ -2289,13 +2234,6 @@ function bindEvents() {
     }
   });
 
-  if (searchFilter) {
-    searchFilter.addEventListener("input", () => {
-      state.query = searchFilter.value;
-      renderApp();
-    });
-  }
-
   refreshButton?.addEventListener("click", () => refreshData({ reason: "manual" }));
   whatsAppButton?.addEventListener("click", () => {
     const panel = document.querySelector("#whatsapp-panel");
@@ -2308,9 +2246,6 @@ function bindEvents() {
   goalNotificationsToggle?.addEventListener("change", (event) => {
     setGoalNotificationsEnabled(event.currentTarget.checked);
   });
-  worldCupButton?.addEventListener("click", () => {
-    setWorldCupPanelOpen(!state.worldCup.open);
-  });
   worldCupViews?.addEventListener("click", (event) => {
     const tab = event.target.closest(".wc-view-tab");
     if (tab) {
@@ -2321,7 +2256,6 @@ function bindEvents() {
   window.addEventListener("online", () => refreshWhenDue("online"));
   window.addEventListener("offline", () => {
     clearAutoRefreshTimer();
-    renderConnectionStatus();
     renderAutoRefreshStatus();
   });
   document.addEventListener("visibilitychange", () => {
@@ -2371,7 +2305,6 @@ if (typeof module !== "undefined") {
     formatGamesShareMessage,
     formatRefreshInterval,
     filterGames,
-    gameMatchesQuery,
     getAutoRefreshInterval,
     getMatchDisplayValue,
     getStatusLabel,

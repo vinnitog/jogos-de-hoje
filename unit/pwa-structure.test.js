@@ -30,7 +30,9 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /<link rel="manifest" href="manifest\.json">/);
   assert.match(html, /<link rel="stylesheet" href="css\/app\.css">/);
   assert.match(html, /<script src="js\/app\.js" defer><\/script>/);
-  assert.match(html, /id="source-label"/);
+  assert.doesNotMatch(html, /id="connection-status"/);
+  assert.doesNotMatch(html, /id="search-filter"/);
+  assert.doesNotMatch(html, /id="source-label"/);
   assert.match(html, /id="date-display"/);
   assert.match(html, /id="calendar-grid"/);
   assert.match(html, /id="auto-refresh-status"/);
@@ -41,7 +43,7 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /id="whatsapp-phone"/);
   assert.match(html, /id="whatsapp-default-contact"/);
   assert.match(html, /id="whatsapp-copy-button"/);
-  assert.match(html, /id="world-cup-button"/);
+  assert.doesNotMatch(html, /id="world-cup-button"/);
   assert.match(html, /id="world-cup-panel"/);
   assert.match(html, /id="world-cup-views"/);
   assert.match(html, /id="world-cup-content"/);
@@ -50,14 +52,31 @@ test("html wires app assets and service worker script", () => {
   assert.doesNotMatch(html, /type="date"/);
 });
 
-test("goal notification toggle is accessible and linked to status text", () => {
+test("html omits the removed status, search and list action labels", () => {
+  const html = read("index.html");
+  const listActions = html.match(/<div class="list-actions">([\s\S]*?)<\/div>/)?.[1];
+  const worldCupPanel = html.match(
+    /<section class="world-cup-panel"[\s\S]*?<\/section>/
+  )?.[0];
+
+  assert.ok(listActions, "list actions should remain available");
+  assert.ok(worldCupPanel, "World Cup panel should remain available");
+  assert.doesNotMatch(html, /<input\b[^>]*\btype=["']search["']/i);
+  assert.doesNotMatch(html, /placeholder=["']Time, estádio ou canal["']/i);
+  assert.doesNotMatch(html, />\s*Online\s*</i);
+  assert.doesNotMatch(html, />\s*Gols:\s*desligado\s*</i);
+  assert.doesNotMatch(listActions, /Copa\s*(?:do Mundo\s*)?2026/i);
+  assert.doesNotMatch(listActions, /world-cup-button/);
+  assert.match(worldCupPanel, /Copa do Mundo 2026/);
+  assert.match(worldCupPanel, /id="world-cup-views"/);
+});
+
+test("goal notification toggle remains accessible without redundant status text", () => {
   const html = read("index.html");
 
   assert.match(html, /id="goal-notifications-toggle"[\s\S]*role="switch"/);
-  assert.match(html, /id="goal-notifications-toggle"[\s\S]*aria-describedby="goal-notification-status"/);
   assert.match(html, /id="goal-notifications-toggle"[\s\S]*aria-label="Notificacoes de gol"/);
-  assert.match(html, /id="goal-notification-status"/);
-  assert.doesNotMatch(html, /id="goal-notification-status"[^>]*aria-live/);
+  assert.doesNotMatch(html, /id="goal-notification-status"/);
 });
 
 test("manifest is installable enough for static hosting", () => {
@@ -71,7 +90,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v12/);
+  assert.match(serviceWorker, /jogos-hoje-v13/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);
