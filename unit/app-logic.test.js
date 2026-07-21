@@ -20,7 +20,6 @@ const {
   formatGamesShareMessage,
   formatRefreshInterval,
   formatWhatsAppPhoneInput,
-  gameMatchesQuery,
   getAutoRefreshInterval,
   getBroadcastName,
   getCalendarDays,
@@ -137,15 +136,29 @@ const ESPN_SCOREBOARD = {
   ]
 };
 
-test("filters games by date, competition and normalized query", () => {
+test("filters games by date and competition", () => {
   const games = filterGames(TEST_GAMES, {
     selectedDate: "2026-06-15",
-    selectedCompetition: "Libertadores",
-    query: "sao paulo"
+    selectedCompetition: "Libertadores"
   });
 
   assert.equal(games.length, 1);
   assert.equal(games[0].home, "São Paulo");
+});
+
+test("ignores a residual search query when filtering games", () => {
+  const filters = {
+    selectedDate: "2026-06-15",
+    selectedCompetition: "Todos"
+  };
+  const gamesWithoutQuery = filterGames(TEST_GAMES, filters);
+  const gamesWithResidualQuery = filterGames(TEST_GAMES, {
+    ...filters,
+    query: "time que nao existe"
+  });
+
+  assert.deepEqual(gamesWithResidualQuery, gamesWithoutQuery);
+  assert.deepEqual(gamesWithResidualQuery.map((game) => game.home), ["Palmeiras", "São Paulo"]);
 });
 
 test("sorts games by kickoff time", () => {
@@ -381,13 +394,6 @@ test("deduplicates World Cup fallback with source broadcasts", () => {
   assert.deepEqual(broadcasts.map(getBroadcastName), ["CazéTV", "Globo"]);
   assert.equal(broadcasts[0].guaranteed, true);
   assert.equal(broadcasts[0].type, "streaming");
-});
-
-test("search matches broadcasts without accents", () => {
-  const game = TEST_GAMES.find((item) => item.home === "São Paulo");
-
-  assert.equal(normalizeText("São Paulo"), "sao paulo");
-  assert.equal(gameMatchesQuery(game, "disney"), true);
 });
 
 test("returns readable status labels", () => {

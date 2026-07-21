@@ -91,10 +91,8 @@ button {
   opacity: 0.78;
 }
 
-.connection-pill,
 .competition,
-.status,
-.source-pill {
+.status {
   display: inline-flex;
   min-height: 28px;
   align-items: center;
@@ -102,18 +100,6 @@ button {
   font-size: 0.78rem;
   font-weight: 700;
   white-space: nowrap;
-}
-
-.connection-pill {
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.32);
-}
-
-.connection-pill.is-offline {
-  background: #fff3cd;
-  border-color: #f2c14e;
-  color: #553c00;
 }
 
 .content {
@@ -180,11 +166,6 @@ button {
   display: grid;
   gap: 16px;
   padding: 16px;
-}
-
-.filter-row {
-  display: grid;
-  gap: 12px;
 }
 
 .field {
@@ -437,12 +418,6 @@ button {
   margin-top: 8px;
 }
 
-.source-pill {
-  padding: 3px 9px;
-  background: #fff4d5;
-  color: #5b4300;
-}
-
 .auto-refresh-status {
   display: inline-flex;
   min-height: 28px;
@@ -526,54 +501,6 @@ button {
 }
 
 .notification-toggle input:focus-visible + .notification-toggle__track {
-  outline: 3px solid rgba(242, 193, 78, 0.52);
-  outline-offset: 2px;
-}
-
-.notification-status {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  border-radius: 999px;
-  padding: 3px 9px;
-  background: #e7f2ec;
-  color: var(--color-primary-dark);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.text-button {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 6px 12px;
-  background: #ffffff;
-  color: var(--color-primary-dark);
-  font-size: 0.9rem;
-  font-weight: 800;
-  line-height: 1.2;
-  white-space: nowrap;
-  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
-}
-
-.text-button:hover {
-  border-color: var(--color-primary);
-  background: var(--color-surface-strong);
-}
-
-.text-button:active {
-  transform: scale(0.97);
-}
-
-.text-button.is-active {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: #ffffff;
-}
-
-.text-button:focus-visible {
   outline: 3px solid rgba(242, 193, 78, 0.52);
   outline-offset: 2px;
 }
@@ -1237,11 +1164,6 @@ button {
   .scoreboard {
     grid-template-columns: 1fr minmax(18rem, 0.52fr);
     align-items: center;
-  }
-
-  .filter-row {
-    grid-template-columns: minmax(14rem, 0.7fr) minmax(18rem, 1fr);
-    align-items: end;
   }
 
   .share-form {
