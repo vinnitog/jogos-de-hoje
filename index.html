@@ -11,30 +11,31 @@
     <link rel="stylesheet" href="css/app.css">
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Ir para os jogos</a>
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Agenda do futebol</p>
           <h1>Jogos de hoje</h1>
+          <p class="topbar-subtitle">Horários, placares e onde assistir ao futebol do dia.</p>
         </div>
       </header>
 
-      <main class="content">
+      <main class="content" id="main-content">
         <section class="scoreboard" aria-labelledby="summary-title">
           <div>
-            <p class="eyebrow">Partidas filtradas</p>
             <h2 id="summary-title">0 jogos</h2>
+            <p class="scoreboard-context">na data e nos campeonatos selecionados</p>
           </div>
-          <div class="summary-grid" aria-label="Resumo dos jogos">
+          <dl class="summary-grid" aria-label="Resumo dos jogos">
             <div>
-              <span id="summary-live">0</span>
-              <small>ao vivo</small>
+              <dt>ao vivo</dt>
+              <dd id="summary-live">0</dd>
             </div>
             <div>
-              <span id="summary-tv">0</span>
-              <small>com transmissão</small>
+              <dt>com transmissão</dt>
+              <dd id="summary-tv">0</dd>
             </div>
-          </div>
+          </dl>
         </section>
 
         <section class="filters" aria-label="Filtros dos jogos">
@@ -86,13 +87,13 @@
 
           <div class="competition-field">
             <span class="filter-title">Campeonatos</span>
-            <div class="competition-tabs" id="competition-filter" role="tablist" aria-label="Campeonatos"></div>
+            <div class="competition-tabs" id="competition-filter" role="group" aria-label="Filtrar por campeonato"></div>
           </div>
         </section>
 
         <section class="list-header" aria-live="polite">
           <div>
-            <p class="eyebrow">Atualizado em</p>
+            <span class="field-label">Atualizado em</span>
             <strong id="updated-at">--</strong>
             <div class="source-row">
               <span class="auto-refresh-status" id="auto-refresh-status">Auto: --</span>
@@ -101,7 +102,7 @@
                   id="goal-notifications-toggle"
                   type="checkbox"
                   role="switch"
-                  aria-label="Notificacoes de gol"
+                  aria-label="Notificações de gol"
                 >
                 <span class="notification-toggle__track" aria-hidden="true"></span>
                 <span class="notification-toggle__text">Gols</span>
@@ -109,70 +110,68 @@
             </div>
           </div>
           <div class="list-actions">
-            <button class="icon-button icon-button--whatsapp" id="whatsapp-button" type="button" aria-label="Enviar agenda pelo WhatsApp" title="Enviar agenda pelo WhatsApp">
-              <span aria-hidden="true">WA</span>
+            <button class="icon-button icon-button--whatsapp" id="whatsapp-button" type="button" aria-label="Compartilhar agenda" aria-controls="whatsapp-panel" aria-expanded="false" title="Compartilhar agenda">
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M12 3v11m0-11 4 4m-4-4L8 7M5 12v7h14v-7" />
+              </svg>
             </button>
             <button class="icon-button" id="refresh-button" type="button" aria-label="Atualizar jogos" title="Atualizar jogos">
-              <span aria-hidden="true">↻</span>
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" />
+              </svg>
             </button>
           </div>
         </section>
 
         <section class="share-panel" id="whatsapp-panel" aria-labelledby="whatsapp-panel-title" hidden>
-          <form class="share-form" id="whatsapp-form">
+          <div class="share-form">
             <div class="share-heading">
-              <p class="eyebrow">WhatsApp</p>
-              <h2 id="whatsapp-panel-title">Enviar agenda</h2>
+              <h2 id="whatsapp-panel-title">Compartilhar agenda</h2>
+              <p>O app prepara o texto; você escolhe a conversa no WhatsApp.</p>
             </div>
-            <div class="preset-contact" aria-label="Contato rapido">
-              <button class="preset-contact-button" id="whatsapp-default-contact" type="button" aria-pressed="false">
-                <span>Contato padrao</span>
-                <small id="whatsapp-default-contact-status">Toque para usar</small>
-              </button>
-            </div>
-            <label class="field share-phone-field">
-              <span>Outro contato</span>
-              <input
-                id="whatsapp-phone"
-                type="tel"
-                inputmode="tel"
-                autocomplete="tel"
-                placeholder="+55 11 99999-9999"
-                aria-describedby="whatsapp-status"
-              >
-            </label>
             <div class="share-actions">
               <button class="secondary-button" id="whatsapp-copy-button" type="button">Copiar</button>
-              <button class="primary-button" type="submit">Abrir WhatsApp</button>
+              <button class="primary-button" id="whatsapp-open-button" type="button">Abrir WhatsApp</button>
             </div>
-          </form>
+          </div>
           <p class="share-status" id="whatsapp-status" role="status" aria-live="polite"></p>
         </section>
 
         <section class="world-cup-panel" id="world-cup-panel" aria-labelledby="world-cup-title" hidden>
           <div class="world-cup-header">
             <div class="share-heading">
-              <p class="eyebrow">Copa do Mundo 2026</p>
-              <h2 id="world-cup-title">Tabela e chaveamento</h2>
+              <h2 id="world-cup-title">Copa do Mundo 2026</h2>
+              <p>Tabela e chaveamento</p>
             </div>
             <button class="secondary-button" id="world-cup-refresh" type="button">Atualizar</button>
           </div>
           <div class="wc-views" id="world-cup-views" role="tablist" aria-label="Visualização da Copa 2026">
-            <button class="wc-view-tab is-active" type="button" role="tab" data-view="groups" aria-selected="true">Grupos</button>
-            <button class="wc-view-tab" type="button" role="tab" data-view="bracket" aria-selected="false">Chaveamento</button>
+            <button class="wc-view-tab is-active" id="wc-tab-groups" type="button" role="tab" data-view="groups" aria-controls="world-cup-content" aria-selected="true" tabindex="0">Grupos</button>
+            <button class="wc-view-tab" id="wc-tab-bracket" type="button" role="tab" data-view="bracket" aria-controls="world-cup-content" aria-selected="false" tabindex="-1">Chaveamento</button>
           </div>
-          <div class="world-cup-content" id="world-cup-content" aria-live="polite"></div>
+          <div class="world-cup-content" id="world-cup-content" role="tabpanel" aria-labelledby="wc-tab-groups" aria-live="polite"></div>
         </section>
 
         <section class="game-list" id="game-list" aria-label="Lista de jogos"></section>
 
         <section class="empty-state" id="empty-state" hidden>
-          <div class="empty-visual" aria-hidden="true">
-            <span></span>
-          </div>
+          <svg class="empty-visual" aria-hidden="true" viewBox="0 0 96 64" focusable="false">
+            <rect x="2" y="2" width="92" height="60" rx="8" />
+            <path d="M48 2v60M2 32h20m52 0h20M22 20v24m52-24v24" />
+            <circle cx="48" cy="32" r="9" />
+          </svg>
           <h2>Nenhum jogo encontrado</h2>
           <p>Altere a data ou o campeonato.</p>
         </section>
+
+        <footer class="app-footer">
+          <details class="privacy-note">
+            <summary>Privacidade e fontes</summary>
+            <p>Sem cadastro, anúncios ou rastreadores. Preferências e jogos em cache ficam somente neste dispositivo.</p>
+            <p>Os placares vêm da ESPN; bandeiras podem ser carregadas via FlagCDN. Ao compartilhar, o WhatsApp é aberto apenas por sua ação.</p>
+          </details>
+          <p>Transmissões marcadas como habituais devem ser confirmadas na grade do dia.</p>
+        </footer>
       </main>
     </div>
 

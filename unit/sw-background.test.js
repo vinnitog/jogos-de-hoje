@@ -9,8 +9,9 @@ const serviceWorkerSource = fs.readFileSync(path.join(root, "sw.js"), "utf8");
 
 function createCacheStorage() {
   const stores = new Map();
+  const addAllCalls = [];
 
-  return {
+  const storage = {
     async open(name) {
       if (!stores.has(name)) {
         stores.set(name, new Map());
@@ -18,7 +19,9 @@ function createCacheStorage() {
 
       const store = stores.get(name);
       return {
-        async addAll() {},
+        async addAll(requests) {
+          addAllCalls.push({ name, requests: [...requests] });
+        },
         async match(request) {
           const key = typeof request === "string" ? request : request.url;
           const response = store.get(key);
@@ -37,6 +40,15 @@ function createCacheStorage() {
       return stores.delete(name);
     }
   };
+
+  storage.seed = (name) => {
+    if (!stores.has(name)) {
+      stores.set(name, new Map());
+    }
+  };
+  storage.addAllCalls = addAllCalls;
+
+  return storage;
 }
 
 function createEvent() {
@@ -94,6 +106,17 @@ function createHarness({ fetchImpl } = {}) {
   const listeners = {};
   const notifications = [];
   const caches = createCacheStorage();
+  const lifecycle = {
+    claimCalls: 0,
+    skipWaitingCalls: 0
+  };
+  const clients = {
+    async claim() {
+      lifecycle.claimCalls += 1;
+    },
+    matchAll: async () => [],
+    openWindow: async () => undefined
+  };
   const self = {
     registration: {
       async showNotification(title, options) {
@@ -103,7 +126,10 @@ function createHarness({ fetchImpl } = {}) {
     addEventListener(type, callback) {
       listeners[type] = callback;
     },
-    skipWaiting() {}
+    clients,
+    skipWaiting() {
+      lifecycle.skipWaitingCalls += 1;
+    }
   };
   const context = {
     Response,
@@ -113,10 +139,7 @@ function createHarness({ fetchImpl } = {}) {
     caches,
     fetch: fetchImpl || (async () => new Response(JSON.stringify({ events: [] }))),
     self,
-    clients: {
-      matchAll: async () => [],
-      openWindow: async () => undefined
-    }
+    clients
   };
 
   vm.runInNewContext(serviceWorkerSource, context, {
@@ -150,20 +173,71 @@ function createHarness({ fetchImpl } = {}) {
     await settle();
   }
 
+  async function triggerLifecycle(type) {
+    const { event, settle } = createEvent();
+    listeners[type](event);
+    await settle();
+  }
+
   async function readGoalState() {
-    const cache = await caches.open("jogos-hoje-v13");
+    const cache = await caches.open("jogos-hoje-v14");
     const response = await cache.match("https://jogos-hoje.local/goal-notification-state");
     return response ? response.json() : null;
   }
 
   return {
+    caches,
+    lifecycle,
     listeners,
     notifications,
     postGoalState,
     readGoalState,
+    triggerLifecycle,
     triggerSync
   };
 }
+
+test("service worker installs the complete app shell in cache v14", async () => {
+  const harness = createHarness();
+
+  await harness.triggerLifecycle("install");
+
+  assert.deepEqual(await harness.caches.keys(), ["jogos-hoje-v14"]);
+  assert.equal(harness.lifecycle.skipWaitingCalls, 1);
+  assert.equal(harness.caches.addAllCalls.length, 1);
+  assert.equal(harness.caches.addAllCalls[0].name, "jogos-hoje-v14");
+  assert.deepEqual(harness.caches.addAllCalls[0].requests, [
+    ".",
+    "index.html",
+    "css/app.css",
+    "js/app.js",
+    "data/jogos.json",
+    "manifest.json",
+    "icons/icon.svg"
+  ]);
+});
+
+test("service worker upgrade removes only older app caches", async () => {
+  const harness = createHarness();
+  for (const cacheName of [
+    "jogos-hoje-v12",
+    "jogos-hoje-v13",
+    "jogos-hoje-v14",
+    "images-v3",
+    "another-app-cache"
+  ]) {
+    harness.caches.seed(cacheName);
+  }
+
+  await harness.triggerLifecycle("activate");
+
+  assert.deepEqual((await harness.caches.keys()).sort(), [
+    "another-app-cache",
+    "images-v3",
+    "jogos-hoje-v14"
+  ]);
+  assert.equal(harness.lifecycle.claimCalls, 1);
+});
 
 test("service worker stores goal notification state and acknowledges the app", async () => {
   const harness = createHarness();

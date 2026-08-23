@@ -2,17 +2,19 @@
 
 ## Workspace Obrigatorio
 
-O workspace correto deste projeto e:
+O workspace correto deste projeto e a raiz do repositorio:
 
 ```text
-C:\Users\usuario\Desktop\Jogos de hoje
+<repo-root>/Jogos de hoje
 ```
 
-Antes de qualquer leitura, edicao, teste, commit ou push, confirme que o comando esta rodando nesse diretorio.
+Antes de qualquer leitura, edicao, teste, commit ou push, confirme com `git rev-parse --show-toplevel` que o comando esta rodando na raiz. Nao versione caminhos absolutos da maquina local.
 
 ## Contexto Do Projeto
 
 Leia `PROJECT_CONTEXT.md` antes de alterar codigo, testes, docs ou configuracoes.
+
+Leia tambem `PROJECT_SKILLS.md` antes de acionar as skills locais de LGPD, design ou monetizacao.
 
 ## Stack Inicial
 

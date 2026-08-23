@@ -2,17 +2,19 @@
 
 ## Workspace Obrigatorio
 
-Use sempre este workspace:
+Use sempre a raiz deste repositorio:
 
 ```text
-C:\Users\usuario\Desktop\Jogos de hoje
+<repo-root>/Jogos de hoje
 ```
 
-Antes de ler, editar, testar, commitar ou fazer push, confirme que o terminal esta nesse diretorio.
+Antes de ler, editar, testar, commitar ou fazer push, confirme com `git rev-parse --show-toplevel` que o terminal esta na raiz. Nao versione caminhos absolutos da maquina local.
 
 ## Contexto Compartilhado
 
 Leia `PROJECT_CONTEXT.md` antes de alterar o projeto. Ele e a fonte versionada de objetivo, stack e decisoes iniciais.
+
+Leia tambem `PROJECT_SKILLS.md` antes de acionar as skills locais de LGPD, design ou monetizacao.
 
 ## Stack Inicial
 

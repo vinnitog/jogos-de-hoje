@@ -12,7 +12,7 @@ Listar jogos do dia referentes aos campeonatos Brasileiro Serie A, Paulista Seri
 
 ## Publico Alvo
 
-Nao definido
+Torcedores no Brasil que querem consultar rapidamente os jogos do dia, placares e onde assistir, principalmente pelo celular.
 
 ## Caracteristicas Informadas
 
@@ -170,3 +170,18 @@ git diff --check
 - Preservar alteracoes existentes do usuario.
 - Fazer staging explicito por arquivo.
 - Manter documentacao de contexto versionada neste arquivo.
+
+## Decisao revisada (2026-08-22) — privacidade e compartilhamento
+
+- Removido o telefone fixo ofuscado no JavaScript.
+- Removida a coleta e persistencia de telefone em `localStorage`.
+- O compartilhamento prepara apenas o texto da agenda e abre o seletor do WhatsApp apos acao explicita.
+- O app continua sem cadastro, backend, analytics, publicidade ou cookies.
+- O mapa tecnico e os gaps de privacidade ficam versionados em `.lgpd/`.
+
+## Skills locais (2026-08-22)
+
+- LGPD: `goul4rt/lgpd-skills`.
+- Design/front-end: `pbakaus/impeccable`.
+- Monetizacao: `phuryn/pm-skills` (`monetization-strategy`).
+- A adaptacao ao projeto fica em `PROJECT_SKILLS.md`; as copias de origem ficam em `.agents/skills/`.

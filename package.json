@@ -1,6 +1,6 @@
 ﻿{
-  "name": "Jogos de hoje",
-  "version": "0.1.0",
+  "name": "jogos-de-hoje",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "test": "node --test unit/*.test.js"

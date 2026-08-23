@@ -8,6 +8,7 @@ const {
   buildScoreboardUrl,
   buildScoreboardRangeUrl,
   buildWhatsAppUrl,
+  clearLegacyStoredContact,
   detectGoalEvents,
   extractLiveClock,
   getStatusDisplayLabel,
@@ -19,7 +20,6 @@ const {
   formatDateDisplayParts,
   formatGamesShareMessage,
   formatRefreshInterval,
-  formatWhatsAppPhoneInput,
   getAutoRefreshInterval,
   getBroadcastName,
   getCalendarDays,
@@ -27,7 +27,6 @@ const {
   getNormalizedBroadcasts,
   getMatchDisplayValue,
   getStatusLabel,
-  getWhatsAppPresetContact,
   mapEspnScoreboard,
   mapEspnStandings,
   mapEspnKnockout,
@@ -36,7 +35,6 @@ const {
   getKnockoutRoundMeta,
   normalizeBroadcast,
   normalizeText,
-  normalizeWhatsAppPhone,
   parseScore,
   shiftDateISO,
   sortGamesByTime,
@@ -235,51 +233,50 @@ test("summarizes total, live games and broadcasts", () => {
   });
 });
 
-test("normalizes WhatsApp phone numbers for a single contact", () => {
-  assert.equal(normalizeWhatsAppPhone("(11) 99999-9999"), "5511999999999");
-  assert.equal(normalizeWhatsAppPhone("011 99999-9999"), "5511999999999");
-  assert.equal(normalizeWhatsAppPhone("+55 11 99999-9999"), "5511999999999");
-  assert.equal(normalizeWhatsAppPhone("0055 11 99999-9999"), "5511999999999");
-  assert.equal(normalizeWhatsAppPhone("351 912 345 678"), "351912345678");
-  assert.equal(normalizeWhatsAppPhone("12345"), "");
-});
-
-test("masks WhatsApp phone input progressively", () => {
-  assert.equal(formatWhatsAppPhoneInput(""), "");
-  assert.equal(formatWhatsAppPhoneInput("1"), "(1");
-  assert.equal(formatWhatsAppPhoneInput("11"), "(11");
-  assert.equal(formatWhatsAppPhoneInput("1199"), "(11) 99");
-  assert.equal(formatWhatsAppPhoneInput("11999999999"), "(11) 99999-9999");
-  assert.equal(formatWhatsAppPhoneInput("1133334444"), "(11) 3333-4444");
-});
-
-test("masks WhatsApp phone input with country code", () => {
-  assert.equal(formatWhatsAppPhoneInput("5511999999999"), "+55 (11) 99999-9999");
-  assert.equal(formatWhatsAppPhoneInput("+55 11 99999-9999"), "+55 (11) 99999-9999");
-  assert.equal(formatWhatsAppPhoneInput("0055 11 99999-9999"), "+55 (11) 99999-9999");
-  assert.equal(formatWhatsAppPhoneInput("+351 912 345 678"), "+351912345678");
-});
-
-test("keeps masked phone compatible with normalization", () => {
-  const masked = formatWhatsAppPhoneInput("11999999999");
-  assert.equal(normalizeWhatsAppPhone(masked), "5511999999999");
-});
-
-test("decodes the fixed WhatsApp contact without exposing it in the UI", () => {
-  const contact = getWhatsAppPresetContact();
-
-  assert.equal(contact.label, "Contato padrao");
-  assert.equal(contact.phone.length, 13);
-  assert.match(contact.phone, /^55\d{11}$/);
-});
-
 test("builds WhatsApp URL with encoded agenda message", () => {
   const message = "Agenda dos jogos - 15/06/2026\nPalmeiras x Flamengo";
-  const url = buildWhatsAppUrl("(11) 99999-9999", message);
+  const url = buildWhatsAppUrl(message);
 
-  assert.equal(url.startsWith("https://wa.me/5511999999999?text="), true);
+  assert.equal(url.startsWith("https://wa.me/?text="), true);
   assert.equal(decodeURIComponent(url.split("?text=")[1]), message);
-  assert.equal(buildWhatsAppUrl("12345", message), "");
+  assert.equal(buildWhatsAppUrl(""), "");
+});
+
+test("removes the legacy stored WhatsApp contact", () => {
+  const values = new Map([
+    ["jogos-hoje-whatsapp-contact", "legacy-value"],
+    ["unrelated-preference", "keep-me"]
+  ]);
+  const storage = {
+    removeItem(key) {
+      values.delete(key);
+    }
+  };
+
+  assert.equal(clearLegacyStoredContact(storage), true);
+  assert.equal(values.has("jogos-hoje-whatsapp-contact"), false);
+  assert.equal(values.get("unrelated-preference"), "keep-me");
+  assert.equal(clearLegacyStoredContact(storage), true);
+  assert.equal(values.get("unrelated-preference"), "keep-me");
+});
+
+test("legacy contact cleanup tolerates absent and unavailable storage", () => {
+  const removedKeys = [];
+  const emptyStorage = {
+    removeItem(key) {
+      removedKeys.push(key);
+    }
+  };
+  const blockedStorage = {
+    removeItem() {
+      throw new Error("storage blocked");
+    }
+  };
+
+  assert.equal(clearLegacyStoredContact(emptyStorage), true);
+  assert.deepEqual(removedKeys, ["jogos-hoje-whatsapp-contact"]);
+  assert.equal(clearLegacyStoredContact(null), true);
+  assert.equal(clearLegacyStoredContact(blockedStorage), false);
 });
 
 test("formats agenda message from filtered games", () => {
