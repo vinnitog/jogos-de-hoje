@@ -1,7 +1,6 @@
 const STORAGE_KEY = "jogos-hoje-cache-v2";
 const GOAL_NOTIFICATIONS_STORAGE_KEY = "jogos-hoje-goal-notifications";
-const WHATSAPP_CONTACT_STORAGE_KEY = "jogos-hoje-whatsapp-contact";
-const WHATSAPP_DEFAULT_CONTACT_ID = "primary";
+const LEGACY_WHATSAPP_CONTACT_STORAGE_KEY = "jogos-hoje-whatsapp-contact";
 const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
 const DATA_URL = "data/jogos.json";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
@@ -92,13 +91,6 @@ const LEAGUES = [
   }
 ];
 const COMPETITIONS = LEAGUES.map((league) => league.name);
-const WHATSAPP_PRESET_CONTACTS = [
-  {
-    id: WHATSAPP_DEFAULT_CONTACT_ID,
-    label: "Contato padrao",
-    sealedDigits: []
-  }
-];
 
 const FALLBACK_DATA = {
   updatedAt: null,
@@ -114,8 +106,6 @@ const state = {
   selectedDate: getTodayISO(),
   calendarMonthDate: getTodayISO(),
   selectedCompetition: "Todos",
-  whatsAppPhone: readWhatsAppPhonePreference(),
-  selectedWhatsAppPresetContactId: "",
   goalNotificationsEnabled: readGoalNotificationsPreference(),
   worldCup: {
     open: false,
@@ -292,125 +282,13 @@ function saveGoalNotificationsPreference(enabled) {
   }
 }
 
-function readWhatsAppPhonePreference() {
+function clearLegacyStoredContact(storage = typeof localStorage !== "undefined" ? localStorage : null) {
   try {
-    return localStorage.getItem(WHATSAPP_CONTACT_STORAGE_KEY) || "";
+    storage?.removeItem(LEGACY_WHATSAPP_CONTACT_STORAGE_KEY);
+    return true;
   } catch {
-    return "";
+    return false;
   }
-}
-
-function saveWhatsAppPhonePreference(phone) {
-  try {
-    if (phone) {
-      localStorage.setItem(WHATSAPP_CONTACT_STORAGE_KEY, phone);
-    } else {
-      localStorage.removeItem(WHATSAPP_CONTACT_STORAGE_KEY);
-    }
-  } catch {
-    // Preferencia em memoria apenas; navegadores privados podem bloquear storage.
-  }
-}
-
-function normalizeWhatsAppPhone(value, defaultCountryCode = "55") {
-  let digits = String(value || "").replace(/\D/g, "");
-
-  if (digits.startsWith("00")) {
-    digits = digits.slice(2);
-  }
-
-  if (digits.startsWith("0") && (digits.length === 11 || digits.length === 12)) {
-    digits = digits.slice(1);
-  }
-
-  if (digits.length >= 12 && digits.length <= 15) {
-    return digits;
-  }
-
-  if (digits.length === 10 || digits.length === 11) {
-    return `${defaultCountryCode}${digits}`;
-  }
-
-  return "";
-}
-
-function formatBrazilPhoneMask(localDigits, prefix = "") {
-  const digits = String(localDigits || "").slice(0, 11);
-
-  if (digits.length === 0) {
-    return prefix.trim();
-  }
-
-  const ddd = digits.slice(0, 2);
-
-  if (digits.length <= 2) {
-    return `${prefix}(${ddd}`;
-  }
-
-  const rest = digits.slice(2);
-  let formattedRest;
-
-  if (rest.length <= 4) {
-    formattedRest = rest;
-  } else if (rest.length <= 8) {
-    formattedRest = `${rest.slice(0, 4)}-${rest.slice(4)}`;
-  } else {
-    formattedRest = `${rest.slice(0, 5)}-${rest.slice(5)}`;
-  }
-
-  return `${prefix}(${ddd}) ${formattedRest}`;
-}
-
-function formatWhatsAppPhoneInput(value) {
-  const raw = String(value || "");
-  const hadInternational = raw.trim().startsWith("+");
-  let digits = raw.replace(/\D/g, "");
-
-  if (!digits) {
-    return "";
-  }
-
-  if (digits.startsWith("00")) {
-    digits = digits.slice(2);
-  }
-
-  if (digits.startsWith("55") && digits.length > 2) {
-    return formatBrazilPhoneMask(digits.slice(2), "+55 ");
-  }
-
-  if (!hadInternational && digits.length <= 11) {
-    return formatBrazilPhoneMask(digits);
-  }
-
-  return `+${digits}`;
-}
-
-function unsealContactDigits(sealedDigits = []) {
-  return sealedDigits
-    .map((value, index) => String.fromCharCode(value - 17 - (index % 5)))
-    .join("");
-}
-
-function getWhatsAppPresetContact(contactId = WHATSAPP_DEFAULT_CONTACT_ID) {
-  const preset = WHATSAPP_PRESET_CONTACTS.find((contact) => contact.id === contactId);
-
-  if (!preset) {
-    return null;
-  }
-
-  return {
-    id: preset.id,
-    label: preset.label,
-    phone: unsealContactDigits(preset.sealedDigits)
-  };
-}
-
-function getSelectedWhatsAppPhone(inputValue) {
-  const preset = state.selectedWhatsAppPresetContactId
-    ? getWhatsAppPresetContact(state.selectedWhatsAppPresetContactId)
-    : null;
-
-  return preset?.phone || normalizeWhatsAppPhone(inputValue || state.whatsAppPhone);
 }
 
 function isGoalNotificationSupported() {
@@ -958,14 +836,12 @@ function formatGamesShareMessage(games = [], options = {}) {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function buildWhatsAppUrl(phone, message) {
-  const normalizedPhone = normalizeWhatsAppPhone(phone);
-
-  if (!normalizedPhone) {
+function buildWhatsAppUrl(message) {
+  if (!message) {
     return "";
   }
 
-  return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message || "")}`;
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
 }
 
 function hasLiveGamesOnDate(games, dateISO) {
@@ -1597,11 +1473,19 @@ function createBroadcastChip(channel) {
   const broadcast = normalizeBroadcast(channel);
   const chip = document.createElement("span");
   chip.className = "broadcast-chip";
-  chip.textContent = broadcast.name;
   const isHabitual = !broadcast.guaranteed && broadcast.source === "manual";
+  chip.textContent = isHabitual ? `${broadcast.name} · habitual` : broadcast.name;
   chip.classList.toggle("is-guaranteed", broadcast.guaranteed);
   chip.classList.toggle("is-habitual", isHabitual);
   chip.dataset.type = broadcast.type;
+  chip.setAttribute(
+    "aria-label",
+    isHabitual
+      ? `${broadcast.name}, transmissão habitual da competição; confirme a grade do dia`
+      : broadcast.guaranteed
+        ? `${broadcast.name}, transmissão garantida para a competição`
+        : `${broadcast.name}, transmissão informada pela fonte`
+  );
   chip.title = broadcast.guaranteed
     ? `${broadcast.name} - transmissão confirmada para esta competição`
     : isHabitual
@@ -1621,9 +1505,8 @@ function renderCompetitionTabs() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "tab-button";
-    button.role = "tab";
     button.textContent = competition;
-    button.setAttribute("aria-selected", String(competition === state.selectedCompetition));
+    button.setAttribute("aria-pressed", String(competition === state.selectedCompetition));
     button.addEventListener("click", () => {
       state.selectedCompetition = competition;
       renderApp();
@@ -1669,6 +1552,21 @@ function renderGames(games) {
   list.textContent = "";
   games.forEach((game) => list.append(renderGameCard(game)));
   empty.hidden = games.length > 0;
+
+  if (games.length === 0) {
+    const title = empty.querySelector("h2");
+    const description = empty.querySelector("p");
+    const isOfflineFallback = state.data.source?.type === "offline";
+
+    if (title) {
+      title.textContent = isOfflineFallback ? "Sem dados disponíveis" : "Nenhum jogo encontrado";
+    }
+    if (description) {
+      description.textContent = isOfflineFallback
+        ? "Conecte-se e atualize para carregar os jogos."
+        : "Altere a data ou o campeonato.";
+    }
+  }
 }
 
 function renderSummary(games) {
@@ -1702,44 +1600,21 @@ function setWhatsAppStatus(message, type = "") {
   element.classList.toggle("is-success", type === "success");
 }
 
-function renderWhatsAppPanel() {
-  const input = document.querySelector("#whatsapp-phone");
-  const presetButton = document.querySelector("#whatsapp-default-contact");
-  const presetStatus = document.querySelector("#whatsapp-default-contact-status");
-  const selectedPreset = state.selectedWhatsAppPresetContactId
-    ? getWhatsAppPresetContact(state.selectedWhatsAppPresetContactId)
-    : null;
-  const defaultPreset = getWhatsAppPresetContact();
-
-  if (input && document.activeElement !== input) {
-    input.value = selectedPreset ? "" : formatWhatsAppPhoneInput(state.whatsAppPhone);
-  }
-
-  if (presetButton && defaultPreset) {
-    const isSelected = selectedPreset?.id === defaultPreset.id;
-    presetButton.classList.toggle("is-selected", isSelected);
-    presetButton.setAttribute("aria-pressed", String(isSelected));
-  }
-
-  if (presetStatus) {
-    presetStatus.textContent = selectedPreset ? "Selecionado" : "Toque para usar";
-  }
-}
-
 function setWhatsAppPanelOpen(isOpen) {
   const panel = document.querySelector("#whatsapp-panel");
-  const input = document.querySelector("#whatsapp-phone");
+  const trigger = document.querySelector("#whatsapp-button");
+  const openButton = document.querySelector("#whatsapp-open-button");
 
   if (!panel) {
     return;
   }
 
   panel.hidden = !isOpen;
+  trigger?.setAttribute("aria-expanded", String(isOpen));
   setWhatsAppStatus("");
 
   if (isOpen) {
-    renderWhatsAppPanel();
-    input?.focus();
+    openButton?.focus();
   }
 }
 
@@ -1776,63 +1651,16 @@ async function copyTextToClipboard(text) {
   }
 }
 
-function handleWhatsAppSubmit(event) {
-  event.preventDefault();
-
-  const input = document.querySelector("#whatsapp-phone");
-  const phone = getSelectedWhatsAppPhone(input?.value || "");
-  const isPresetContact = Boolean(state.selectedWhatsAppPresetContactId);
-
-  if (!phone) {
-    setWhatsAppStatus("Selecione o contato padrao ou informe um telefone com DDI e DDD.", "error");
-    input?.focus();
-    return;
-  }
-
-  if (!isPresetContact) {
-    state.whatsAppPhone = phone;
-    saveWhatsAppPhonePreference(phone);
-
-    if (input) {
-      input.value = phone;
-    }
-  }
-
+function handleWhatsAppOpen() {
   setWhatsAppStatus("Abrindo WhatsApp...", "success");
-  openWhatsAppUrl(buildWhatsAppUrl(phone, getCurrentShareMessage()));
-}
-
-function handleWhatsAppPresetContactClick() {
-  state.selectedWhatsAppPresetContactId = WHATSAPP_DEFAULT_CONTACT_ID;
-  setWhatsAppStatus("Contato padrao selecionado.", "success");
-  renderWhatsAppPanel();
-}
-
-function handleWhatsAppPhoneInput(event) {
-  const input = event?.currentTarget || document.querySelector("#whatsapp-phone");
-
-  if (input) {
-    const masked = formatWhatsAppPhoneInput(input.value);
-    if (masked !== input.value) {
-      input.value = masked;
-      input.setSelectionRange?.(masked.length, masked.length);
-    }
-  }
-
-  if (!state.selectedWhatsAppPresetContactId) {
-    return;
-  }
-
-  state.selectedWhatsAppPresetContactId = "";
-  setWhatsAppStatus("");
-  renderWhatsAppPanel();
+  openWhatsAppUrl(buildWhatsAppUrl(getCurrentShareMessage()));
 }
 
 async function handleWhatsAppCopy() {
   const copied = await copyTextToClipboard(getCurrentShareMessage());
 
   setWhatsAppStatus(
-    copied ? "Mensagem copiada." : "Nao foi possivel copiar automaticamente.",
+    copied ? "Mensagem copiada." : "Não foi possível copiar automaticamente.",
     copied ? "success" : "error"
   );
 }
@@ -2085,6 +1913,7 @@ function renderWorldCupPanel() {
     const isActive = tab.dataset.view === wc.view;
     tab.classList.toggle("is-active", isActive);
     tab.setAttribute("aria-selected", String(isActive));
+    tab.tabIndex = isActive ? 0 : -1;
   });
 
   const content = document.querySelector("#world-cup-content");
@@ -2093,6 +1922,8 @@ function renderWorldCupPanel() {
   }
 
   content.textContent = "";
+  content.setAttribute("aria-labelledby", `wc-tab-${wc.view}`);
+  content.setAttribute("aria-busy", String(wc.loading));
 
   if (wc.loading && !wc.standings && !wc.knockout) {
     content.append(createWorldCupNotice("Carregando dados da Copa..."));
@@ -2133,7 +1964,6 @@ function renderApp() {
   renderSummary(filteredGames);
   renderAutoRefreshStatus();
   renderGoalNotificationToggle();
-  renderWhatsAppPanel();
   renderWorldCupPanel();
   setText("#updated-at", formatDateTime(state.data.updatedAt));
 }
@@ -2165,6 +1995,11 @@ async function refreshData(options = {}) {
   refreshRuntime.inFlight = true;
   refreshRuntime.lastStartedAt = now;
   button?.classList.add("is-loading");
+  button?.setAttribute("aria-busy", "true");
+  if (button) {
+    button.disabled = true;
+  }
+  document.querySelector("#game-list")?.setAttribute("aria-busy", "true");
 
   try {
     const previousGames = state.data.games || [];
@@ -2179,6 +2014,11 @@ async function refreshData(options = {}) {
     refreshRuntime.pendingOptions = null;
     refreshRuntime.inFlight = false;
     button?.classList.remove("is-loading");
+    button?.setAttribute("aria-busy", "false");
+    if (button) {
+      button.disabled = false;
+    }
+    document.querySelector("#game-list")?.setAttribute("aria-busy", "false");
     renderApp();
     if (pendingOptions) {
       refreshData(pendingOptions);
@@ -2202,9 +2042,7 @@ function bindEvents() {
   const nextMonth = document.querySelector("#calendar-next-month");
   const refreshButton = document.querySelector("#refresh-button");
   const whatsAppButton = document.querySelector("#whatsapp-button");
-  const whatsAppForm = document.querySelector("#whatsapp-form");
-  const whatsAppPhoneInput = document.querySelector("#whatsapp-phone");
-  const whatsAppPresetButton = document.querySelector("#whatsapp-default-contact");
+  const whatsAppOpenButton = document.querySelector("#whatsapp-open-button");
   const whatsAppCopyButton = document.querySelector("#whatsapp-copy-button");
   const goalNotificationsToggle = document.querySelector("#goal-notifications-toggle");
   const worldCupViews = document.querySelector("#world-cup-views");
@@ -2239,9 +2077,7 @@ function bindEvents() {
     const panel = document.querySelector("#whatsapp-panel");
     setWhatsAppPanelOpen(Boolean(panel?.hidden));
   });
-  whatsAppForm?.addEventListener("submit", handleWhatsAppSubmit);
-  whatsAppPhoneInput?.addEventListener("input", handleWhatsAppPhoneInput);
-  whatsAppPresetButton?.addEventListener("click", handleWhatsAppPresetContactClick);
+  whatsAppOpenButton?.addEventListener("click", handleWhatsAppOpen);
   whatsAppCopyButton?.addEventListener("click", handleWhatsAppCopy);
   goalNotificationsToggle?.addEventListener("change", (event) => {
     setGoalNotificationsEnabled(event.currentTarget.checked);
@@ -2251,6 +2087,23 @@ function bindEvents() {
     if (tab) {
       setWorldCupView(tab.dataset.view);
     }
+  });
+  worldCupViews?.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    const tabs = [...worldCupViews.querySelectorAll(".wc-view-tab")];
+    const currentIndex = tabs.indexOf(document.activeElement);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? tabs.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+
+    event.preventDefault();
+    tabs[nextIndex]?.focus();
+    setWorldCupView(tabs[nextIndex]?.dataset.view);
   });
   worldCupRefresh?.addEventListener("click", () => loadWorldCupData({ force: true }));
   window.addEventListener("online", () => refreshWhenDue("online"));
@@ -2273,6 +2126,7 @@ function bindEvents() {
 }
 
 async function initApp() {
+  clearLegacyStoredContact();
   bindEvents();
   renderApp();
   await registerAppServiceWorker();
@@ -2296,6 +2150,7 @@ if (typeof module !== "undefined") {
     buildScoreboardUrl,
     buildScoreboardRangeUrl,
     detectGoalEvents,
+    clearLegacyStoredContact,
     extractLiveClock,
     getStatusDisplayLabel,
     getFlagFallbackUrl,
@@ -2318,12 +2173,9 @@ if (typeof module !== "undefined") {
     getCalendarDays,
     getMonthStartISO,
     getTodayISO,
-    getWhatsAppPresetContact,
     enrichBroadcastsForCompetition,
     getBroadcastName,
     getNormalizedBroadcasts,
-    normalizeWhatsAppPhone,
-    formatWhatsAppPhoneInput,
     normalizeText,
     normalizeBroadcast,
     parseScore,

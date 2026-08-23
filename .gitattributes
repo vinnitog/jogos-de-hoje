@@ -1,0 +1,2 @@
+.agents/** whitespace=-trailing-space,-blank-at-eof
+licenses/** whitespace=-trailing-space,-blank-at-eof

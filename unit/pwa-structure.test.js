@@ -2,12 +2,20 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { getWhatsAppPresetContact } = require("../js/app.js");
 
 const root = path.join(__dirname, "..");
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");
+}
+
+function openingTags(fragment, names) {
+  const matcher = new RegExp(`<(${names.join("|")})\\b`, "gi");
+  return [...fragment.matchAll(matcher)].map((match) => match[1].toLowerCase());
+}
+
+function openingTagById(html, id) {
+  return html.match(new RegExp(`<[^>]+\\bid=["']${id}["'][^>]*>`, "i"))?.[0] || "";
 }
 
 test("pwa files exist", () => {
@@ -39,10 +47,9 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /id="goal-notifications-toggle"/);
   assert.match(html, /id="whatsapp-button"/);
   assert.match(html, /id="whatsapp-panel"/);
-  assert.match(html, /id="whatsapp-form"/);
-  assert.match(html, /id="whatsapp-phone"/);
-  assert.match(html, /id="whatsapp-default-contact"/);
+  assert.match(html, /id="whatsapp-open-button"/);
   assert.match(html, /id="whatsapp-copy-button"/);
+  assert.doesNotMatch(html, /type="tel"/);
   assert.doesNotMatch(html, /id="world-cup-button"/);
   assert.match(html, /id="world-cup-panel"/);
   assert.match(html, /id="world-cup-views"/);
@@ -50,6 +57,67 @@ test("html wires app assets and service worker script", () => {
   assert.match(html, /data-view="groups"/);
   assert.match(html, /data-view="bracket"/);
   assert.doesNotMatch(html, /type="date"/);
+});
+
+test("description lists keep each term before its description", () => {
+  const html = read("index.html");
+  const lists = [...html.matchAll(/<dl\b[^>]*>([\s\S]*?)<\/dl>/gi)];
+
+  assert.ok(lists.length >= 2, "summary and game details should use description lists");
+  for (const [, contents] of lists) {
+    const tags = openingTags(contents, ["dt", "dd"]);
+    assert.ok(tags.length > 0, "each description list should contain terms and descriptions");
+    assert.equal(tags.length % 2, 0, "description list tags should form complete pairs");
+    for (let index = 0; index < tags.length; index += 2) {
+      assert.deepEqual(tags.slice(index, index + 2), ["dt", "dd"]);
+    }
+  }
+});
+
+test("interactive filters and World Cup views expose stable ARIA state", () => {
+  const html = read("index.html");
+  const app = read("js/app.js");
+  const competitionFilter = openingTagById(html, "competition-filter");
+  const tabList = openingTagById(html, "world-cup-views");
+  const groupsTab = openingTagById(html, "wc-tab-groups");
+  const bracketTab = openingTagById(html, "wc-tab-bracket");
+  const tabPanel = openingTagById(html, "world-cup-content");
+
+  assert.match(competitionFilter, /role="group"/);
+  assert.match(competitionFilter, /aria-label=/);
+  assert.match(app, /button\.setAttribute\("aria-pressed",\s*String\(competition === state\.selectedCompetition\)\)/);
+
+  assert.match(tabList, /role="tablist"/);
+  for (const tab of [groupsTab, bracketTab]) {
+    assert.match(tab, /role="tab"/);
+    assert.match(tab, /aria-controls="world-cup-content"/);
+  }
+  assert.match(groupsTab, /aria-selected="true"/);
+  assert.match(groupsTab, /tabindex="0"/);
+  assert.match(bracketTab, /aria-selected="false"/);
+  assert.match(bracketTab, /tabindex="-1"/);
+  assert.match(tabPanel, /role="tabpanel"/);
+  assert.match(tabPanel, /aria-labelledby="wc-tab-groups"/);
+  assert.match(app, /tab\.setAttribute\("aria-selected",\s*String\(isActive\)\)/);
+  assert.match(app, /tab\.tabIndex\s*=\s*isActive \? 0 : -1/);
+  assert.match(app, /\["ArrowLeft",\s*"ArrowRight",\s*"Home",\s*"End"\]/);
+  assert.match(app, /tabs\[nextIndex\]\?\.focus\(\)/);
+
+  assert.match(app, /content\.setAttribute\("aria-busy",\s*String\(wc\.loading\)\)/);
+  assert.match(app, /#game-list"\)\?\.setAttribute\("aria-busy",\s*"true"\)/);
+  assert.match(app, /#game-list"\)\?\.setAttribute\("aria-busy",\s*"false"\)/);
+});
+
+test("footer gives a concise privacy and third-party disclosure", () => {
+  const html = read("index.html");
+  const privacyNote = html.match(/<details class="privacy-note">([\s\S]*?)<\/details>/)?.[1];
+
+  assert.ok(privacyNote, "privacy note should be present in the app footer");
+  assert.match(privacyNote, /Sem cadastro, anúncios ou rastreadores/i);
+  assert.match(privacyNote, /somente neste dispositivo/i);
+  assert.match(privacyNote, /ESPN/);
+  assert.match(privacyNote, /FlagCDN/);
+  assert.match(privacyNote, /WhatsApp[^.]*apenas por sua ação/i);
 });
 
 test("html omits the removed status, search and list action labels", () => {
@@ -75,7 +143,7 @@ test("goal notification toggle remains accessible without redundant status text"
   const html = read("index.html");
 
   assert.match(html, /id="goal-notifications-toggle"[\s\S]*role="switch"/);
-  assert.match(html, /id="goal-notifications-toggle"[\s\S]*aria-label="Notificacoes de gol"/);
+  assert.match(html, /id="goal-notifications-toggle"[\s\S]*aria-label="Notificações de gol"/);
   assert.doesNotMatch(html, /id="goal-notification-status"/);
 });
 
@@ -90,7 +158,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v13/);
+  assert.match(serviceWorker, /jogos-hoje-v14/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);
@@ -112,25 +180,25 @@ test("goal notification source persists preference and requests permission", () 
   assert.match(app, /Notification\.permission === "denied"/);
 });
 
-test("WhatsApp share source stores one contact and opens a wa.me URL", () => {
+test("WhatsApp share does not collect contacts and opens a wa.me selector", () => {
   const app = read("js/app.js");
   const html = read("index.html");
   const css = read("css/app.css");
-  const fixedPhone = getWhatsAppPresetContact().phone;
 
-  assert.match(app, /WHATSAPP_CONTACT_STORAGE_KEY\s*=\s*"jogos-hoje-whatsapp-contact"/);
-  assert.match(app, /WHATSAPP_PRESET_CONTACTS/);
-  assert.match(app, /sealedDigits/);
-  assert.match(app, /selectedWhatsAppPresetContactId/);
-  assert.match(app, /localStorage\.setItem\(WHATSAPP_CONTACT_STORAGE_KEY,\s*phone\)/);
-  assert.match(app, /https:\/\/wa\.me\/\$\{normalizedPhone\}\?text=/);
+  assert.doesNotMatch(app, /const WHATSAPP_CONTACT_STORAGE_KEY/);
+  assert.doesNotMatch(app, /WHATSAPP_PRESET_CONTACTS/);
+  assert.doesNotMatch(app, /sealedDigits/);
+  assert.doesNotMatch(app, /(?:atob|fromCharCode)\s*\([^)]*(?:whatsapp|contact|phone)/i);
+  assert.doesNotMatch(app, /(?:whatsapp|contact|phone)[\s\S]{0,80}\.reverse\(\)\.join\(/i);
+  assert.doesNotMatch(app, /localStorage[^\n]*phone/i);
+  assert.doesNotMatch(app, /https:\/\/wa\.me\/\d/);
+  assert.match(app, /removeItem\(LEGACY_WHATSAPP_CONTACT_STORAGE_KEY\)/);
+  assert.match(app, /https:\/\/wa\.me\/\?text=/);
   assert.match(app, /formatGamesShareMessage\(getCurrentFilteredGames\(\)/);
   assert.match(app, /navigator\.clipboard/);
-  assert.equal(app.includes(fixedPhone), false);
-  assert.equal(html.includes(fixedPhone), false);
+  assert.doesNotMatch(html, /autocomplete="tel"/);
   assert.match(css, /\.share-panel\[hidden\]\s*{[^}]*display:\s*none/s);
   assert.match(css, /\.icon-button--whatsapp/);
-  assert.match(css, /\.preset-contact-button\.is-selected/);
 });
 
 test("goal notification refresh compares previous and next games", () => {

@@ -1,4 +1,5 @@
-const CACHE_NAME = "jogos-hoje-v13";
+const CACHE_NAME = "jogos-hoje-v14";
+const CACHE_PREFIX = "jogos-hoje-v";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
 const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
@@ -396,7 +397,11 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(
+        keys
+          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      )
     )
   );
   self.clients.claim();

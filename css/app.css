@@ -7,11 +7,13 @@
   --color-accent: #f2c14e;
   --color-info: #2563eb;
   --color-danger: #b42318;
+  --color-success: #087443;
   --color-text: #17211d;
   --color-muted: #5e6f66;
   --color-border: #cddbd3;
-  --shadow-soft: 0 10px 28px rgba(18, 51, 40, 0.12);
-  --radius: 8px;
+  --shadow-soft: 0 10px 28px rgba(18, 51, 40, 0.1);
+  --radius: 14px;
+  --radius-control: 10px;
 }
 
 * {
@@ -22,7 +24,7 @@ html {
   min-height: 100%;
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Trebuchet MS", Candara, sans-serif;
   /* Nenhum elemento pode gerar rolagem horizontal da pagina inteira. */
   overflow-x: hidden;
 }
@@ -35,6 +37,16 @@ body {
   overflow-x: hidden;
 }
 
+::selection {
+  background: var(--color-accent);
+  color: var(--color-primary-dark);
+}
+
+* {
+  scrollbar-color: var(--color-primary) var(--color-surface-strong);
+  scrollbar-width: thin;
+}
+
 button,
 input {
   font: inherit;
@@ -42,6 +54,28 @@ input {
 
 button {
   cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  transform: translateY(-150%);
+  border-radius: var(--radius-control);
+  padding: 10px 14px;
+  background: var(--color-accent);
+  color: var(--color-primary-dark);
+  font-weight: 800;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 .app-shell {
@@ -78,17 +112,14 @@ button {
 
 .topbar h1 {
   font-size: clamp(2rem, 9vw, 4rem);
-  letter-spacing: 0;
+  letter-spacing: -0.03em;
 }
 
-.eyebrow {
-  margin: 0 0 4px;
-  color: currentColor;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.78;
+.topbar-subtitle {
+  max-width: 38rem;
+  margin: 8px 0 0;
+  color: #dcebe5;
+  font-size: 1rem;
 }
 
 .competition,
@@ -104,8 +135,8 @@ button {
 
 .content {
   display: grid;
-  gap: 16px;
-  padding-bottom: 32px;
+  gap: 20px;
+  padding-bottom: max(32px, env(safe-area-inset-bottom));
 }
 
 .scoreboard,
@@ -115,7 +146,7 @@ button {
 .world-cup-panel,
 .game-card,
 .empty-state {
-  border: 1px solid rgba(205, 219, 211, 0.88);
+  border: 0;
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--shadow-soft);
@@ -125,38 +156,55 @@ button {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
-  padding: 20px;
+  padding: 24px;
 }
 
 .scoreboard h2 {
   font-size: 2rem;
 }
 
-.scoreboard .eyebrow,
-.list-header .eyebrow {
+.scoreboard-context,
+.field-label {
   color: var(--color-muted);
+}
+
+.scoreboard-context {
+  margin: 6px 0 0;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  margin: 0;
 }
 
 .summary-grid div {
-  min-height: 76px;
-  padding: 14px;
-  border-radius: var(--radius);
-  background: var(--color-surface-strong);
+  display: flex;
+  flex-direction: column;
+  min-height: 64px;
+  padding: 6px 14px;
 }
 
-.summary-grid span {
+.summary-grid div + div {
+  border-left: 1px solid var(--color-border);
+}
+
+.summary-grid dd {
   display: block;
+  order: -1;
+  margin: 0;
   font-size: 1.55rem;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
-.summary-grid small {
+.summary-grid dt {
   color: var(--color-muted);
   font-weight: 700;
 }
@@ -189,7 +237,7 @@ button {
 .date-step {
   min-height: 48px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: #ffffff;
   color: var(--color-text);
   font-size: 1rem;
@@ -280,7 +328,7 @@ button {
 .calendar-day {
   min-height: 40px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: #ffffff;
   color: var(--color-primary-dark);
   font-weight: 800;
@@ -340,9 +388,9 @@ button {
 .today-button:focus-visible,
 .tab-button:focus-visible,
 .icon-button:focus-visible,
-.preset-contact-button:focus-visible,
 .primary-button:focus-visible,
-.secondary-button:focus-visible {
+.secondary-button:focus-visible,
+.privacy-note summary:focus-visible {
   outline: 3px solid rgba(242, 193, 78, 0.52);
   outline-offset: 2px;
 }
@@ -373,7 +421,7 @@ button {
   overflow-wrap: anywhere;
 }
 
-.tab-button[aria-selected="true"] {
+.tab-button[aria-pressed="true"] {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: #ffffff;
@@ -511,12 +559,20 @@ button {
   height: 44px;
   place-items: center;
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   background: var(--color-primary);
   color: #ffffff;
-  font-size: 1.3rem;
-  font-weight: 800;
   transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.icon-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .icon-button:hover {
@@ -527,7 +583,7 @@ button {
   transform: scale(0.96);
 }
 
-.icon-button.is-loading span {
+.icon-button.is-loading svg {
   animation: spin 800ms linear infinite;
 }
 
@@ -539,13 +595,8 @@ button {
   background: #0b6f63;
 }
 
-.icon-button--whatsapp span {
-  font-size: 0.82rem;
-  letter-spacing: 0;
-}
-
 .share-panel {
-  padding: 16px;
+  padding: 20px;
 }
 
 .share-panel[hidden] {
@@ -559,53 +610,14 @@ button {
 
 .share-heading h2 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
   line-height: 1.2;
 }
 
-.preset-contact {
-  display: grid;
-}
-
-.preset-contact-button {
-  display: grid;
-  min-height: 56px;
-  justify-items: start;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 9px 12px;
-  background: #ffffff;
-  color: var(--color-primary-dark);
-  font-weight: 800;
-  line-height: 1.2;
-  text-align: left;
-  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
-}
-
-.preset-contact-button small {
-  margin-top: 3px;
+.share-heading p {
+  max-width: 55ch;
+  margin: 6px 0 0;
   color: var(--color-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.preset-contact-button:hover {
-  border-color: var(--color-primary);
-  background: var(--color-surface-strong);
-}
-
-.preset-contact-button:active {
-  transform: scale(0.98);
-}
-
-.preset-contact-button.is-selected {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: #ffffff;
-}
-
-.preset-contact-button.is-selected small {
-  color: rgba(255, 255, 255, 0.86);
 }
 
 .share-actions {
@@ -617,7 +629,7 @@ button {
 .primary-button,
 .secondary-button {
   min-height: 44px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-control);
   padding: 8px 14px;
   font-weight: 800;
   line-height: 1.2;
@@ -664,7 +676,7 @@ button {
 }
 
 .share-status.is-success {
-  color: var(--color-primary-dark);
+  color: var(--color-success);
 }
 
 .game-list {
@@ -812,25 +824,13 @@ button {
 }
 
 .empty-visual {
-  position: relative;
-  width: 88px;
-  height: 56px;
-  border: 2px solid var(--color-primary);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(90deg, transparent 49%, rgba(16, 92, 70, 0.28) 50%, transparent 51%),
-    repeating-linear-gradient(90deg, #e7f2ec 0 18px, #d8eadf 18px 36px);
-}
-
-.empty-visual span {
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  left: calc(50% - 9px);
-  top: calc(50% - 9px);
-  border: 2px solid var(--color-primary-dark);
-  border-radius: 50%;
-  background: #ffffff;
+  width: 96px;
+  height: 64px;
+  fill: var(--color-surface-strong);
+  stroke: var(--color-primary);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .world-cup-panel {
@@ -878,10 +878,19 @@ button {
   font-weight: 800;
 }
 
+.wc-view-tab:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-strong);
+}
+
 .wc-view-tab.is-active {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: #ffffff;
+}
+
+.wc-view-tab.is-active:hover {
+  background: var(--color-primary-dark);
 }
 
 .wc-view-tab:focus-visible {
@@ -1151,6 +1160,36 @@ button {
   color: var(--color-muted);
 }
 
+.app-footer {
+  display: grid;
+  gap: 10px;
+  padding: 4px 4px 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.app-footer > p {
+  margin: 0;
+}
+
+.privacy-note {
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.privacy-note summary {
+  width: fit-content;
+  border-radius: 6px;
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.privacy-note p {
+  max-width: 70ch;
+  margin: 10px 0 0;
+}
+
 @media (min-width: 720px) {
   .topbar,
   .content {
@@ -1167,19 +1206,19 @@ button {
   }
 
   .share-form {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: end;
-    column-gap: 16px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 24px;
   }
 
   .share-heading {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 
   .share-actions {
-    grid-column: 1 / -1;
+    grid-column: auto;
     grid-template-columns: auto auto;
-    justify-content: start;
+    justify-content: end;
   }
 
   .game-list {
@@ -1202,5 +1241,16 @@ button {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
