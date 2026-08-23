@@ -1330,11 +1330,15 @@ function setDatePopoverOpen(isOpen) {
     return;
   }
 
+  const shouldRestoreFocus = !isOpen && popover.contains(document.activeElement);
+
   popover.hidden = !isOpen;
   display.setAttribute("aria-expanded", String(isOpen));
 
   if (isOpen) {
     renderCalendar();
+  } else if (shouldRestoreFocus) {
+    display.focus();
   }
 }
 

@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const root = path.join(__dirname, "..");
 
@@ -16,6 +17,32 @@ function openingTags(fragment, names) {
 
 function openingTagById(html, id) {
   return html.match(new RegExp(`<[^>]+\\bid=["']${id}["'][^>]*>`, "i"))?.[0] || "";
+}
+
+function blockAfter(source, pattern) {
+  const match = source.match(pattern);
+  if (!match) {
+    return "";
+  }
+
+  const openingBrace = source.indexOf("{", match.index + match[0].length);
+  if (openingBrace === -1) {
+    return "";
+  }
+
+  let depth = 0;
+  for (let index = openingBrace; index < source.length; index += 1) {
+    if (source[index] === "{") {
+      depth += 1;
+    } else if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openingBrace + 1, index);
+      }
+    }
+  }
+
+  return "";
 }
 
 test("pwa files exist", () => {
@@ -158,7 +185,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v14/);
+  assert.match(serviceWorker, /jogos-hoje-v15/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);
@@ -249,6 +276,10 @@ test("goal notification background sync is wired through the service worker", ()
   assert.match(serviceWorker, /showNotification\(goalEvent\.title/);
   assert.match(serviceWorker, /event\.ports\?\.\[0\]\?\.postMessage/);
   assert.match(serviceWorker, /LIVE_SCORE_STATUSES\s*=\s*\["live",\s*"halftime",\s*"finished"\]/);
+  assert.match(
+    app,
+    /navigator\.serviceWorker\?\.addEventListener\("controllerchange",\s*\(\)\s*=>\s*{\s*postGoalNotificationStateToServiceWorker\(\);\s*}\)/s
+  );
 });
 
 test("notification click closes notification and returns to app", () => {
@@ -267,6 +298,83 @@ test("competition filters wrap instead of using horizontal scroll", () => {
 
   assert.match(css, /\.competition-tabs\s*{[^}]*display:\s*grid/s);
   assert.doesNotMatch(css, /\.competition-tabs\s*{[^}]*overflow-x:\s*auto/s);
+});
+
+test("filter card separates date and competitions only on wide screens", () => {
+  const css = read("css/app.css");
+  const baseCompetitionField = blockAfter(css, /\.competition-field\s*(?=\{)/);
+  const baseFilters = blockAfter(css, /\.filters\s*(?=\{)/);
+  const wideScreen = blockAfter(css, /@media\s*\(min-width:\s*960px\)\s*(?=\{)/);
+  const wideFilters = blockAfter(wideScreen, /\.filters\s*(?=\{)/);
+  const wideDateField = blockAfter(wideScreen, /\.date-field\s*(?=\{)/);
+  const wideCompetitionField = blockAfter(wideScreen, /\.competition-field\s*(?=\{)/);
+  const competitionTabs = blockAfter(css, /\.competition-tabs\s*(?=\{)/);
+  const tabButton = blockAfter(css, /\.tab-button\s*(?=\{)/);
+
+  assert.match(baseFilters, /display:\s*grid/);
+  assert.match(baseFilters, /gap:\s*16px/);
+  assert.doesNotMatch(baseCompetitionField, /border-left/);
+  assert.doesNotMatch(baseFilters, /grid-template-columns/);
+  assert.match(
+    wideFilters,
+    /grid-template-columns:\s*minmax\(0,\s*0\.9fr\)\s+minmax\(0,\s*1\.1fr\)/
+  );
+  assert.match(wideFilters, /gap:\s*0/);
+  assert.match(wideDateField, /min-width:\s*0/);
+  assert.match(wideDateField, /padding-right:\s*24px/);
+  assert.match(wideCompetitionField, /min-width:\s*0/);
+  assert.match(wideCompetitionField, /border-left:\s*1px solid var\(--color-border\)/);
+  assert.match(wideCompetitionField, /padding-left:\s*24px/);
+  assert.match(competitionTabs, /minmax\(min\(100%,\s*8\.5rem\),\s*1fr\)/);
+  assert.match(tabButton, /min-width:\s*0/);
+  assert.match(tabButton, /white-space:\s*normal/);
+  assert.match(tabButton, /overflow-wrap:\s*anywhere/);
+});
+
+test("closing the date popover restores focus only from inside the calendar", () => {
+  const app = read("js/app.js");
+  const body = blockAfter(app, /function setDatePopoverOpen\(isOpen\)\s*(?=\{)/);
+  const internalControl = {};
+  const externalControl = {};
+  const popover = {
+    hidden: false,
+    contains(element) {
+      return element === internalControl;
+    }
+  };
+  const focusCalls = [];
+  const attributes = new Map();
+  const display = {
+    focus() {
+      focusCalls.push("display");
+    },
+    setAttribute(name, value) {
+      attributes.set(name, value);
+    }
+  };
+  const document = {
+    activeElement: externalControl,
+    querySelector(selector) {
+      return selector === "#date-popover" ? popover : display;
+    }
+  };
+
+  assert.ok(body, "setDatePopoverOpen should remain available for behavior testing");
+
+  const setDatePopoverOpen = vm.runInNewContext(
+    `(function setDatePopoverOpen(isOpen) {${body}})`,
+    { document, renderCalendar() {} }
+  );
+
+  setDatePopoverOpen(false);
+  assert.equal(popover.hidden, true);
+  assert.equal(attributes.get("aria-expanded"), "false");
+  assert.deepEqual(focusCalls, [], "closing from an external control must not steal focus");
+
+  popover.hidden = false;
+  document.activeElement = internalControl;
+  setDatePopoverOpen(false);
+  assert.deepEqual(focusCalls, ["display"], "closing from inside should return focus to the trigger");
 });
 
 test("local fallback has no fake matches", () => {

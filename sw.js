@@ -1,4 +1,4 @@
-const CACHE_NAME = "jogos-hoje-v14";
+const CACHE_NAME = "jogos-hoje-v15";
 const CACHE_PREFIX = "jogos-hoje-v";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
