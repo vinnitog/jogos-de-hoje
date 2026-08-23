@@ -180,7 +180,7 @@ function createHarness({ fetchImpl } = {}) {
   }
 
   async function readGoalState() {
-    const cache = await caches.open("jogos-hoje-v14");
+    const cache = await caches.open("jogos-hoje-v15");
     const response = await cache.match("https://jogos-hoje.local/goal-notification-state");
     return response ? response.json() : null;
   }
@@ -197,15 +197,15 @@ function createHarness({ fetchImpl } = {}) {
   };
 }
 
-test("service worker installs the complete app shell in cache v14", async () => {
+test("service worker installs the complete app shell in cache v15", async () => {
   const harness = createHarness();
 
   await harness.triggerLifecycle("install");
 
-  assert.deepEqual(await harness.caches.keys(), ["jogos-hoje-v14"]);
+  assert.deepEqual(await harness.caches.keys(), ["jogos-hoje-v15"]);
   assert.equal(harness.lifecycle.skipWaitingCalls, 1);
   assert.equal(harness.caches.addAllCalls.length, 1);
-  assert.equal(harness.caches.addAllCalls[0].name, "jogos-hoje-v14");
+  assert.equal(harness.caches.addAllCalls[0].name, "jogos-hoje-v15");
   assert.deepEqual(harness.caches.addAllCalls[0].requests, [
     ".",
     "index.html",
@@ -219,10 +219,26 @@ test("service worker installs the complete app shell in cache v14", async () => 
 
 test("service worker upgrade removes only older app caches", async () => {
   const harness = createHarness();
+  await harness.postGoalState({
+    enabled: true,
+    dateISO: "2026-06-15",
+    games: [
+      {
+        id: "bra.1-123",
+        competition: "Brasileirão Série A",
+        date: "2026-06-15",
+        home: "Palmeiras",
+        away: "Flamengo",
+        status: "live",
+        score: "0 x 0"
+      }
+    ]
+  });
   for (const cacheName of [
     "jogos-hoje-v12",
     "jogos-hoje-v13",
     "jogos-hoje-v14",
+    "jogos-hoje-v15",
     "images-v3",
     "another-app-cache"
   ]) {
@@ -234,8 +250,9 @@ test("service worker upgrade removes only older app caches", async () => {
   assert.deepEqual((await harness.caches.keys()).sort(), [
     "another-app-cache",
     "images-v3",
-    "jogos-hoje-v14"
+    "jogos-hoje-v15"
   ]);
+  assert.equal((await harness.readGoalState()).games[0].score, "0 x 0");
   assert.equal(harness.lifecycle.claimCalls, 1);
 });
 
