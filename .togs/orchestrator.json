@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "managedBy": "togs-backoffice",
+  "hubLocator": "TOGS_BACKOFFICE_PATH",
+  "projectId": "jogos-de-hoje",
+  "responsibility": "PWA para consulta de jogos e informacoes esportivas do dia.",
+  "lifecycle": "active",
+  "capabilities": [
+    "frontend",
+    "sports-data",
+    "offline",
+    "accessibility"
+  ],
+  "skills": [
+    "diagnosing-bugs",
+    "tdd",
+    "javascript-testing-patterns",
+    "e2e-testing-patterns",
+    "accessibility-compliance"
+  ],
+  "sources": [
+    {
+      "repository": "mattpocock/skills",
+      "commit": "6654f6b60cd9d5be8b54c6fafe44346dabeb3b76",
+      "license": "MIT",
+      "licenseFile": ".togs/licenses/mattpocock-skills-MIT.txt"
+    },
+    {
+      "repository": "wshobson/agents",
+      "commit": "38e19c20d2b154510b0e624a2e3e186b19b5c527",
+      "license": "MIT",
+      "licenseFile": ".togs/licenses/wshobson-agents-MIT.txt"
+    }
+  ],
+  "policy": {
+    "repositoryOwnsCodeAndGitHistory": true,
+    "crossProjectImportsAllowed": false,
+    "orchestratorMayCommitOrPush": false,
+    "syncIsAdditive": true
+  }
+}
