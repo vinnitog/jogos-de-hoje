@@ -16,7 +16,8 @@
     "tdd",
     "javascript-testing-patterns",
     "e2e-testing-patterns",
-    "accessibility-compliance"
+    "accessibility-compliance",
+    "grill-me"
   ],
   "sources": [
     {

@@ -9,6 +9,7 @@ Este arquivo e gerado pelo hub `togs-backoffice`. O caminho local do control pla
 | `javascript-testing-patterns` | `wshobson/agents` | javascript, typescript, unit-test, integration-test |
 | `e2e-testing-patterns` | `wshobson/agents` | frontend, critical-flow, playwright, cypress |
 | `accessibility-compliance` | `wshobson/agents` | frontend, accessibility, wcag, screen-reader |
+| `grill-me` | `mattpocock/skills` | explicit-invocation, requirements, plan, design, decision |
 
 ## Licencas
 
