@@ -1,2 +1,18 @@
 .agents/** whitespace=-trailing-space,-blank-at-eof
 licenses/** whitespace=-trailing-space,-blank-at-eof
+# togs-orchestrator:attributes:start
+# Keep orchestrator-managed third-party snapshots byte-stable across platforms.
+.agents/skills/diagnosing-bugs/** -text -whitespace
+.agents/skills/tdd/** -text -whitespace
+.agents/skills/javascript-testing-patterns/** -text -whitespace
+.agents/skills/e2e-testing-patterns/** -text -whitespace
+.agents/skills/accessibility-compliance/** -text -whitespace
+.agents/skills/grill-me/** -text -whitespace
+.claude/skills/diagnosing-bugs/** -text -whitespace
+.claude/skills/tdd/** -text -whitespace
+.claude/skills/javascript-testing-patterns/** -text -whitespace
+.claude/skills/e2e-testing-patterns/** -text -whitespace
+.claude/skills/accessibility-compliance/** -text -whitespace
+.claude/skills/grill-me/** -text -whitespace
+.togs/licenses/** -text -whitespace
+# togs-orchestrator:attributes:end
