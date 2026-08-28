@@ -26,24 +26,29 @@ const WORLD_CUP_2026_DEFAULT_BROADCAST = {
 // nao confirmadas por jogo, exceto a CazeTV na Copa do Mundo (guaranteed).
 const LEAGUE_DEFAULT_BROADCASTS = {
   "Brasileirão Série A": [
-    { name: "Premiere", type: "ppv", source: "manual" },
     { name: "Globo", type: "tv", source: "manual" },
-    { name: "CazéTV", type: "streaming", source: "manual" }
-  ],
-  "Paulista Série A1": [
-    { name: "CazéTV", type: "streaming", source: "manual" },
     { name: "Record", type: "tv", source: "manual" },
-    { name: "Paulistão Play", type: "streaming", source: "manual" }
+    { name: "SporTV", type: "tv", source: "manual" },
+    { name: "Prime Video", type: "streaming", source: "manual" },
+    { name: "CazéTV", type: "streaming", source: "manual" },
+    { name: "ge tv", type: "streaming", source: "manual" },
+    { name: "Premiere", type: "ppv", source: "manual" }
   ],
+  // Sem fallback ate existir uma fonte confiavel para a temporada vigente.
+  "Paulista Série A1": [],
   Libertadores: [
-    { name: "Paramount+", type: "streaming", source: "manual" },
-    { name: "SBT", type: "tv", source: "manual" },
-    { name: "ESPN", type: "tv", source: "manual" }
+    { name: "Globo", type: "tv", source: "manual" },
+    { name: "ge tv", type: "streaming", source: "manual" },
+    { name: "ESPN", type: "tv", source: "manual" },
+    { name: "Disney+", type: "streaming", source: "manual" },
+    { name: "Paramount+", type: "streaming", source: "manual" }
   ],
   "Copa do Brasil": [
-    { name: "Prime Video", type: "streaming", source: "manual" },
     { name: "Globo", type: "tv", source: "manual" },
-    { name: "SporTV", type: "tv", source: "manual" }
+    { name: "SporTV", type: "tv", source: "manual" },
+    { name: "Prime Video", type: "streaming", source: "manual" },
+    { name: "Premiere", type: "ppv", source: "manual" },
+    { name: "ge tv", type: "streaming", source: "manual" }
   ],
   // Direitos da Copa do Mundo 2026 no Brasil: CazeTV (streaming, garantida) +
   // Globo (TV aberta) e SporTV (TV fechada). Globo/SporTV entram como habituais,
@@ -53,6 +58,38 @@ const LEAGUE_DEFAULT_BROADCASTS = {
     { name: "Globo", type: "tv", source: "manual" },
     { name: "SporTV", type: "tv", source: "manual" }
   ]
+};
+const LEAGUE_BROADCAST_REVIEWS = {
+  "Brasileirão Série A": {
+    reviewedAt: "2026-08-28",
+    validFrom: "2026-01-01",
+    validThrough: "2026-12-31",
+    source: "https://www.cbf.com.br/futebol-brasileiro/noticias/detalhes/jogosdehoje-campeonato-brasileiro-serie-b/cbf-fecha-parceria-de-transmissao-com-o-uol"
+  },
+  "Paulista Série A1": {
+    reviewedAt: "2026-08-28",
+    validFrom: "2026-01-01",
+    validThrough: "2026-12-31",
+    source: null
+  },
+  Libertadores: {
+    reviewedAt: "2026-08-28",
+    validFrom: "2026-01-01",
+    validThrough: "2026-12-31",
+    source: "https://ge.globo.com/futebol/libertadores/noticia/2026/08/27/quartas-da-libertadores-veja-data-e-hora-dos-jogos.ghtml"
+  },
+  "Copa do Brasil": {
+    reviewedAt: "2026-08-28",
+    validFrom: "2026-01-01",
+    validThrough: "2026-12-31",
+    source: "https://www.cbf.com.br/futebol-brasileiro/jogos/copa-do-brasil/profissional/2026/vasco-da-gama-saf-x-fluminense/834851"
+  },
+  [WORLD_CUP_2026]: {
+    reviewedAt: "2026-08-22",
+    validFrom: "2026-06-11",
+    validThrough: "2026-07-20",
+    source: null
+  }
 };
 const ESPN_STANDINGS_BASE = "https://site.api.espn.com/apis/v2/sports/soccer";
 const WORLD_CUP_SLUG = "fifa.world";
@@ -126,10 +163,7 @@ const refreshRuntime = {
 };
 
 function getTodayISO(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return getDateISOInTimeZone(date, TIME_ZONE);
 }
 
 function parseDateISO(dateISO) {
@@ -735,15 +769,28 @@ function mergeBroadcasts(broadcasts) {
   return [...broadcastsByName.values()];
 }
 
-function getDefaultBroadcastsForCompetition(competition) {
+function getDefaultBroadcastsForCompetition(competition, referenceDateISO = getTodayISO()) {
+  const review = LEAGUE_BROADCAST_REVIEWS[competition];
+  if (
+    !review ||
+    referenceDateISO < review.validFrom ||
+    referenceDateISO > review.validThrough
+  ) {
+    return [];
+  }
+
   return LEAGUE_DEFAULT_BROADCASTS[competition] || [];
 }
 
-function enrichBroadcastsForCompetition(competition, broadcasts = []) {
+function enrichBroadcastsForCompetition(
+  competition,
+  broadcasts = [],
+  referenceDateISO = getTodayISO()
+) {
   const sourceBroadcasts = broadcasts
     .map((broadcast) => normalizeBroadcast(broadcast, { source: "espn" }))
     .filter(Boolean);
-  const defaultBroadcasts = getDefaultBroadcastsForCompetition(competition);
+  const defaultBroadcasts = getDefaultBroadcastsForCompetition(competition, referenceDateISO);
   const guaranteedDefaults = defaultBroadcasts.filter((broadcast) => broadcast.guaranteed);
   // Transmissoes garantidas (ex.: CazeTV na Copa do Mundo) entram sempre.
   // As habituais por liga so complementam quando a fonte nao trouxe canais,
@@ -1005,6 +1052,7 @@ function mapEspnEvent(event, league) {
   const statusRaw = competition.status || event.status || {};
   const status = mapEspnStatus(statusRaw.type || {});
   const kickoff = competition.date || event.date;
+  const date = getDateISOInTimeZone(kickoff);
   const homeScore = home.score;
   const awayScore = away.score;
   const score = homeScore != null && awayScore != null ? `${homeScore} x ${awayScore}` : "";
@@ -1013,7 +1061,7 @@ function mapEspnEvent(event, league) {
     id: `${league.slug}-${event.id}`,
     competition: league.name,
     stage: competition.altGameNote || event.season?.slug || league.name,
-    date: getDateISOInTimeZone(kickoff),
+    date,
     time: getTimeInTimeZone(kickoff),
     home: home.team?.displayName || home.team?.shortDisplayName || "Mandante",
     away: away.team?.displayName || away.team?.shortDisplayName || "Visitante",
@@ -1021,7 +1069,11 @@ function mapEspnEvent(event, league) {
     status,
     score,
     clock: status === "live" ? extractLiveClock(statusRaw) : "",
-    broadcasts: enrichBroadcastsForCompetition(league.name, extractBroadcasts(competition)),
+    broadcasts: enrichBroadcastsForCompetition(
+      league.name,
+      extractBroadcasts(competition),
+      date
+    ),
     sourceUrl: event.links?.find((link) => link.rel?.includes("summary"))?.href || ""
   };
 }
@@ -1252,25 +1304,85 @@ async function fetchLeagueGames(league, dateISO) {
   return mapEspnScoreboard(await response.json(), league);
 }
 
-async function fetchRealGamesData(dateISO) {
-  const results = await Promise.allSettled(
-    LEAGUES.map((league) => fetchLeagueGames(league, dateISO))
-  );
-  const games = results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
-  const failedRequests = results.filter((result) => result.status === "rejected").length;
+function combineLeagueResultsWithCache(leagues, results, cachedData, updatedAt) {
+  const failedCompetitions = leagues
+    .filter((_, index) => results[index]?.status === "rejected")
+    .map((league) => league.name);
 
-  if (failedRequests === LEAGUES.length) {
+  if (failedCompetitions.length === leagues.length) {
     throw new Error("Nenhuma fonte real respondeu.");
   }
 
+  const freshGames = results.flatMap((result) =>
+    result.status === "fulfilled"
+      ? result.value.map((game) => ({ ...game, dataFreshness: "fresh" }))
+      : []
+  );
+  const cachedGames = (cachedData?.games || [])
+    .filter((game) => failedCompetitions.includes(game.competition))
+    .map((game) => ({
+      ...game,
+      dataFreshness: "cached",
+      cachedAt: game.cachedAt || cachedData.updatedAt || null
+    }));
+  const cachedCompetitions = [
+    ...new Set(cachedGames.map((game) => game.competition).filter(Boolean))
+  ];
+  const uncachedCompetitions = failedCompetitions.filter(
+    (competition) => !cachedCompetitions.includes(competition)
+  );
+  const isPartial = failedCompetitions.length > 0;
+  const partialDetail = [
+    cachedCompetitions.length > 0 ? `cache: ${cachedCompetitions.join(", ")}` : "",
+    uncachedCompetitions.length > 0 ? `sem cache: ${uncachedCompetitions.join(", ")}` : ""
+  ].filter(Boolean).join(" · ");
+
   return {
-    updatedAt: new Date().toISOString(),
+    updatedAt,
     source: {
-      label: failedRequests > 0 ? "ESPN Brasil (parcial)" : "ESPN Brasil",
-      type: "espn"
+      label: isPartial ? `ESPN Brasil (parcial) · ${partialDetail}` : "ESPN Brasil",
+      type: isPartial ? "mixed" : "espn",
+      stale: isPartial,
+      staleCompetitions: failedCompetitions
     },
-    games
+    games: [...freshGames, ...cachedGames]
   };
+}
+
+function createCachedFallbackData(cachedData) {
+  if (!cachedData) {
+    return null;
+  }
+
+  return {
+    ...cachedData,
+    source: {
+      label: "Cache local · dados podem estar desatualizados",
+      type: "cache",
+      stale: true,
+      staleCompetitions: [
+        ...new Set((cachedData.games || []).map((game) => game.competition).filter(Boolean))
+      ]
+    },
+    games: (cachedData.games || []).map((game) => ({
+      ...game,
+      dataFreshness: "cached",
+      cachedAt: game.cachedAt || cachedData.updatedAt || null
+    }))
+  };
+}
+
+async function fetchRealGamesData(dateISO, cachedData = readCachedData(dateISO)) {
+  const results = await Promise.allSettled(
+    LEAGUES.map((league) => fetchLeagueGames(league, dateISO))
+  );
+
+  return combineLeagueResultsWithCache(
+    LEAGUES,
+    results,
+    cachedData,
+    new Date().toISOString()
+  );
 }
 
 function readCachedData(dateISO) {
@@ -1306,12 +1418,14 @@ async function loadLocalFallbackData() {
 }
 
 async function loadGamesData(dateISO = state.selectedDate) {
+  const cachedData = readCachedData(dateISO);
+
   try {
-    const data = await fetchRealGamesData(dateISO);
+    const data = await fetchRealGamesData(dateISO, cachedData);
     cacheData(dateISO, data);
     return data;
   } catch {
-    return readCachedData(dateISO) || loadLocalFallbackData();
+    return createCachedFallbackData(cachedData) || loadLocalFallbackData();
   }
 }
 
@@ -1443,6 +1557,20 @@ function renderAutoRefreshStatus() {
   }
 }
 
+function renderDataSourceStatus() {
+  const element = document.querySelector("#data-source-status");
+  if (!element) {
+    return;
+  }
+
+  const source = state.data.source || FALLBACK_DATA.source;
+  const message = `Fonte: ${source.label}`;
+  if (element.textContent !== message) {
+    element.textContent = message;
+  }
+  element.classList.toggle("is-warning", Boolean(source.stale || source.type === "offline"));
+}
+
 function scheduleAutoRefresh() {
   if (typeof window === "undefined") {
     return;
@@ -1526,7 +1654,17 @@ function renderGameCard(game) {
   const broadcasts = card.querySelector(".broadcasts");
   const gameBroadcasts = getNormalizedBroadcasts(game.broadcasts);
 
-  card.querySelector(".competition").textContent = game.competition;
+  const competition = card.querySelector(".competition");
+  const isCached = game.dataFreshness === "cached";
+  competition.textContent = game.competition;
+  competition.classList.toggle("is-cached", isCached);
+  if (isCached) {
+    competition.append(document.createTextNode(" · cache"));
+    const cachedDetail = document.createElement("span");
+    cachedDetail.className = "sr-only";
+    cachedDetail.textContent = "; dados podem estar desatualizados";
+    competition.append(cachedDetail);
+  }
   status.textContent = getStatusDisplayLabel(game);
   status.classList.toggle("is-live", isGameInProgress(game.status));
   status.classList.toggle("is-finished", game.status === "finished");
@@ -1546,6 +1684,49 @@ function renderGameCard(game) {
   return card;
 }
 
+function getEmptyStateContent(source = {}, selectedCompetition = "Todos") {
+  if (source.type === "offline") {
+    return {
+      title: "Sem dados disponíveis",
+      description: "Conecte-se e atualize para carregar os jogos."
+    };
+  }
+
+  if (source.type === "cache") {
+    return {
+      title: "Sem dados atualizados",
+      description: "O cache local não tem jogos para esta seleção. Conecte-se e atualize novamente."
+    };
+  }
+
+  const staleCompetitions = source.staleCompetitions || [];
+  if (source.type === "mixed" && staleCompetitions.includes(selectedCompetition)) {
+    return {
+      title: "Campeonato temporariamente indisponível",
+      description: `A ${selectedCompetition} não respondeu e não há jogos dela no cache local.`
+    };
+  }
+
+  if (source.type === "mixed" && selectedCompetition === "Todos") {
+    return {
+      title: "Atualização parcial",
+      description: `Sem dados novos ou em cache para: ${staleCompetitions.join(", ")}.`
+    };
+  }
+
+  return {
+    title: "Nenhum jogo encontrado",
+    description: "Altere a data ou o campeonato."
+  };
+}
+
+function announceResults(message) {
+  const element = document.querySelector("#results-status");
+  if (element && element.textContent !== message) {
+    element.textContent = message;
+  }
+}
+
 function renderGames(games) {
   const list = document.querySelector("#game-list");
   const empty = document.querySelector("#empty-state");
@@ -1555,22 +1736,24 @@ function renderGames(games) {
 
   list.textContent = "";
   games.forEach((game) => list.append(renderGameCard(game)));
-  empty.hidden = games.length > 0;
+  let announcement = `${games.length} ${games.length === 1 ? "jogo exibido" : "jogos exibidos"}.`;
 
   if (games.length === 0) {
     const title = empty.querySelector("h2");
     const description = empty.querySelector("p");
-    const isOfflineFallback = state.data.source?.type === "offline";
+    const content = getEmptyStateContent(state.data.source, state.selectedCompetition);
 
     if (title) {
-      title.textContent = isOfflineFallback ? "Sem dados disponíveis" : "Nenhum jogo encontrado";
+      title.textContent = content.title;
     }
     if (description) {
-      description.textContent = isOfflineFallback
-        ? "Conecte-se e atualize para carregar os jogos."
-        : "Altere a data ou o campeonato.";
+      description.textContent = content.description;
     }
+    announcement = `${content.title}. ${content.description}`;
   }
+
+  empty.hidden = games.length > 0;
+  announceResults(announcement);
 }
 
 function renderSummary(games) {
@@ -1967,6 +2150,7 @@ function renderApp() {
   renderGames(filteredGames);
   renderSummary(filteredGames);
   renderAutoRefreshStatus();
+  renderDataSourceStatus();
   renderGoalNotificationToggle();
   renderWorldCupPanel();
   setText("#updated-at", formatDateTime(state.data.updatedAt));
@@ -2173,8 +2357,11 @@ if (typeof module !== "undefined") {
     mapEspnKnockout,
     buildWorldCupStandingsUrl,
     buildWorldCupKnockoutUrl,
+    combineLeagueResultsWithCache,
+    createCachedFallbackData,
     getKnockoutRoundMeta,
     getCalendarDays,
+    getEmptyStateContent,
     getMonthStartISO,
     getTodayISO,
     enrichBroadcastsForCompetition,

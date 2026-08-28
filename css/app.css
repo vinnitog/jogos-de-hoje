@@ -20,6 +20,18 @@
   box-sizing: border-box;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 html {
   min-height: 100%;
   background: var(--color-bg);
@@ -488,6 +500,23 @@ button:disabled {
   color: #475467;
 }
 
+.data-source-status {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #edf0ef;
+  color: #344054;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.data-source-status.is-warning {
+  background: #fff4e5;
+  color: #934b00;
+}
+
 .notification-toggle {
   display: inline-flex;
   min-height: 44px;
@@ -701,6 +730,11 @@ button:disabled {
   padding: 3px 9px;
   background: #e7f2ec;
   color: var(--color-primary-dark);
+}
+
+.competition.is-cached {
+  background: #fff4e5;
+  color: #934b00;
 }
 
 .status {

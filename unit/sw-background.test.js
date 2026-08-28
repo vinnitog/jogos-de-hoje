@@ -10,6 +10,7 @@ const serviceWorkerSource = fs.readFileSync(path.join(root, "sw.js"), "utf8");
 function createCacheStorage() {
   const stores = new Map();
   const addAllCalls = [];
+  let putError = null;
 
   const storage = {
     async open(name) {
@@ -28,6 +29,9 @@ function createCacheStorage() {
           return response ? response.clone() : undefined;
         },
         async put(request, response) {
+          if (putError) {
+            throw putError;
+          }
           const key = typeof request === "string" ? request : request.url;
           store.set(key, response.clone());
         }
@@ -38,6 +42,16 @@ function createCacheStorage() {
     },
     async delete(name) {
       return stores.delete(name);
+    },
+    async match(request) {
+      const key = typeof request === "string" ? request : request.url;
+      for (const store of stores.values()) {
+        const response = store.get(key);
+        if (response) {
+          return response.clone();
+        }
+      }
+      return undefined;
     }
   };
 
@@ -45,6 +59,14 @@ function createCacheStorage() {
     if (!stores.has(name)) {
       stores.set(name, new Map());
     }
+  };
+  storage.seedResponse = (name, request, response) => {
+    storage.seed(name);
+    const key = typeof request === "string" ? request : request.url;
+    stores.get(name).set(key, response.clone());
+  };
+  storage.failWritesWith = (error) => {
+    putError = error;
   };
   storage.addAllCalls = addAllCalls;
 
@@ -132,6 +154,7 @@ function createHarness({ fetchImpl } = {}) {
     }
   };
   const context = {
+    Request,
     Response,
     URLSearchParams,
     Intl,
@@ -179,8 +202,23 @@ function createHarness({ fetchImpl } = {}) {
     await settle();
   }
 
+  async function triggerFetch(url) {
+    let responsePromise;
+    const request = new Request(url);
+    const { event, settle } = createEvent();
+    event.request = request;
+    event.respondWith = (promise) => {
+      responsePromise = Promise.resolve(promise);
+    };
+
+    listeners.fetch(event);
+    const response = await responsePromise;
+    await settle();
+    return response;
+  }
+
   async function readGoalState() {
-    const cache = await caches.open("jogos-hoje-v15");
+    const cache = await caches.open("jogos-hoje-goal-state-v1");
     const response = await cache.match("https://jogos-hoje.local/goal-notification-state");
     return response ? response.json() : null;
   }
@@ -193,19 +231,115 @@ function createHarness({ fetchImpl } = {}) {
     postGoalState,
     readGoalState,
     triggerLifecycle,
+    triggerFetch,
     triggerSync
   };
 }
 
-test("service worker installs the complete app shell in cache v15", async () => {
+test("service worker migrates goal state out of the old versioned app cache", async () => {
+  const harness = createHarness();
+  const state = {
+    enabled: true,
+    dateISO: "2026-08-28",
+    games: [{ id: "bra.1-123", score: "1 x 0" }],
+    notifiedTags: ["gol-bra.1-123-1 x 0"]
+  };
+  harness.caches.seedResponse(
+    "jogos-hoje-v9",
+    "https://jogos-hoje.local/goal-notification-state",
+    new Response(
+      JSON.stringify({ enabled: false, games: [{ id: "old", score: "0 x 0" }] }),
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+  harness.caches.seedResponse(
+    "jogos-hoje-v15",
+    "https://jogos-hoje.local/goal-notification-state",
+    new Response(JSON.stringify(state), { headers: { "Content-Type": "application/json" } })
+  );
+  harness.caches.seed("jogos-hoje-v16");
+
+  await harness.triggerLifecycle("activate");
+
+  assert.equal((await harness.readGoalState()).enabled, true);
+  assert.equal((await harness.readGoalState()).games[0].score, "1 x 0");
+  assert.equal((await harness.caches.keys()).includes("jogos-hoje-v15"), false);
+  assert.equal((await harness.caches.keys()).includes("jogos-hoje-goal-state-v1"), true);
+});
+
+test("service worker does not cache unsuccessful data or ESPN responses", async () => {
+  for (const url of [
+    "https://jogos-hoje.test/data/jogos.json",
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard"
+  ]) {
+    const harness = createHarness({
+      fetchImpl: async () => new Response("upstream error", { status: 503 })
+    });
+
+    const response = await harness.triggerFetch(url);
+
+    assert.equal(response.status, 503);
+    assert.equal(await harness.caches.match(url), undefined);
+  }
+});
+
+test("service worker caches successful data and ESPN responses", async () => {
+  for (const url of [
+    "https://jogos-hoje.test/data/jogos.json",
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard"
+  ]) {
+    const harness = createHarness({
+      fetchImpl: async () => new Response("fresh payload", { status: 200 })
+    });
+
+    const response = await harness.triggerFetch(url);
+    const cached = await harness.caches.match(url);
+
+    assert.equal(await response.text(), "fresh payload");
+    assert.equal(await cached.text(), "fresh payload");
+  }
+});
+
+test("service worker returns a cached data response when the network fails", async () => {
+  const url = "https://jogos-hoje.test/data/jogos.json";
+  const harness = createHarness({
+    fetchImpl: async () => {
+      throw new Error("network down");
+    }
+  });
+  harness.caches.seedResponse(
+    "jogos-hoje-v16",
+    url,
+    new Response("cached payload", { status: 200 })
+  );
+
+  const response = await harness.triggerFetch(url);
+
+  assert.equal(await response.text(), "cached payload");
+});
+
+test("service worker still returns a successful network response when cache storage fails", async () => {
+  const url = "https://jogos-hoje.test/data/jogos.json";
+  const harness = createHarness({
+    fetchImpl: async () => new Response("network payload", { status: 200 })
+  });
+  harness.caches.failWritesWith(new Error("quota exceeded"));
+
+  const response = await harness.triggerFetch(url);
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "network payload");
+});
+
+test("service worker installs the complete app shell in cache v16", async () => {
   const harness = createHarness();
 
   await harness.triggerLifecycle("install");
 
-  assert.deepEqual(await harness.caches.keys(), ["jogos-hoje-v15"]);
+  assert.deepEqual(await harness.caches.keys(), ["jogos-hoje-v16"]);
   assert.equal(harness.lifecycle.skipWaitingCalls, 1);
   assert.equal(harness.caches.addAllCalls.length, 1);
-  assert.equal(harness.caches.addAllCalls[0].name, "jogos-hoje-v15");
+  assert.equal(harness.caches.addAllCalls[0].name, "jogos-hoje-v16");
   assert.deepEqual(harness.caches.addAllCalls[0].requests, [
     ".",
     "index.html",
@@ -239,6 +373,7 @@ test("service worker upgrade removes only older app caches", async () => {
     "jogos-hoje-v13",
     "jogos-hoje-v14",
     "jogos-hoje-v15",
+    "jogos-hoje-v16",
     "images-v3",
     "another-app-cache"
   ]) {
@@ -250,7 +385,8 @@ test("service worker upgrade removes only older app caches", async () => {
   assert.deepEqual((await harness.caches.keys()).sort(), [
     "another-app-cache",
     "images-v3",
-    "jogos-hoje-v15"
+    "jogos-hoje-goal-state-v1",
+    "jogos-hoje-v16"
   ]);
   assert.equal((await harness.readGoalState()).games[0].score, "0 x 0");
   assert.equal(harness.lifecycle.claimCalls, 1);

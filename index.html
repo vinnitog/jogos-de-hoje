@@ -91,12 +91,13 @@
           </div>
         </section>
 
-        <section class="list-header" aria-live="polite">
+        <section class="list-header">
           <div>
             <span class="field-label">Atualizado em</span>
             <strong id="updated-at">--</strong>
             <div class="source-row">
               <span class="auto-refresh-status" id="auto-refresh-status">Auto: --</span>
+              <span class="data-source-status" id="data-source-status" role="status" aria-live="polite">Fonte: --</span>
               <label class="notification-toggle" id="goal-notification-control">
                 <input
                   id="goal-notifications-toggle"
@@ -153,6 +154,7 @@
         </section>
 
         <section class="game-list" id="game-list" aria-label="Lista de jogos"></section>
+        <p class="sr-only" id="results-status" role="status" aria-live="polite" aria-atomic="true"></p>
 
         <section class="empty-state" id="empty-state" hidden>
           <svg class="empty-visual" aria-hidden="true" viewBox="0 0 96 64" focusable="false">
