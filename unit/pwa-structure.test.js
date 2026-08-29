@@ -135,6 +135,37 @@ test("interactive filters and World Cup views expose stable ARIA state", () => {
   assert.match(app, /#game-list"\)\?\.setAttribute\("aria-busy",\s*"false"\)/);
 });
 
+test("partial and cached data are announced and marked in the match list", () => {
+  const html = read("index.html");
+  const app = read("js/app.js");
+  const css = read("css/app.css");
+  const sourceStatus = openingTagById(html, "data-source-status");
+  const emptyState = openingTagById(html, "empty-state");
+  const resultsStatus = openingTagById(html, "results-status");
+  const renderGames = blockAfter(app, /function renderGames\(games\)\s*(?=\{)/);
+
+  assert.match(sourceStatus, /role="status"/);
+  assert.match(sourceStatus, /aria-live="polite"/);
+  assert.doesNotMatch(emptyState, /role="status"/);
+  assert.match(resultsStatus, /class="sr-only"/);
+  assert.match(resultsStatus, /role="status"/);
+  assert.match(resultsStatus, /aria-live="polite"/);
+  assert.match(resultsStatus, /aria-atomic="true"/);
+  assert.match(app, /renderDataSourceStatus\(\)/);
+  assert.match(app, /game\.dataFreshness === "cached"/);
+  assert.match(app, /cachedDetail\.className = "sr-only"/);
+  assert.match(app, /dados podem estar desatualizados/i);
+  assert.match(app, /function announceResults\(message\)/);
+  assert.match(app, /element\.textContent !== message/);
+  assert.match(css, /\.competition\.is-cached/);
+  assert.match(css, /\.sr-only/);
+  assert.ok(
+    renderGames.indexOf("getEmptyStateContent") <
+      renderGames.indexOf("empty.hidden = games.length > 0"),
+    "empty-state text should be updated before the live region becomes visible"
+  );
+});
+
 test("footer gives a concise privacy and third-party disclosure", () => {
   const html = read("index.html");
   const privacyNote = html.match(/<details class="privacy-note">([\s\S]*?)<\/details>/)?.[1];
@@ -185,7 +216,7 @@ test("manifest is installable enough for static hosting", () => {
 test("service worker caches the app shell and data source", () => {
   const serviceWorker = read("sw.js");
 
-  assert.match(serviceWorker, /jogos-hoje-v15/);
+  assert.match(serviceWorker, /jogos-hoje-v16/);
   assert.match(serviceWorker, /site\.api\.espn\.com/);
   assert.match(serviceWorker, /notificationclick/);
   assert.match(serviceWorker, /clients\.matchAll/);

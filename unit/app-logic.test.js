@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
 
 const {
   AUTO_REFRESH_INTERVALS,
@@ -23,7 +25,9 @@ const {
   getAutoRefreshInterval,
   getBroadcastName,
   getCalendarDays,
+  getEmptyStateContent,
   getMonthStartISO,
+  getTodayISO,
   getNormalizedBroadcasts,
   getMatchDisplayValue,
   getStatusLabel,
@@ -32,6 +36,8 @@ const {
   mapEspnKnockout,
   buildWorldCupStandingsUrl,
   buildWorldCupKnockoutUrl,
+  combineLeagueResultsWithCache,
+  createCachedFallbackData,
   getKnockoutRoundMeta,
   normalizeBroadcast,
   normalizeText,
@@ -177,6 +183,22 @@ test("formats and shifts custom date picker values", () => {
     dateLabel: "15/06/2026"
   });
   assert.equal(formatDateDisplayParts("2026-06-16", "2026-06-15").dayLabel, "Amanhã");
+});
+
+test("uses the Sao Paulo calendar date for today", () => {
+  const appPath = path.join(__dirname, "..", "js", "app.js");
+  const script = [
+    `const { getTodayISO } = require(${JSON.stringify(appPath)});`,
+    `process.stdout.write(getTodayISO(new Date("2026-08-29T02:30:00.000Z")));`
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["-e", script], {
+    encoding: "utf8",
+    env: { ...process.env, TZ: "UTC" }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "2026-08-28");
+  assert.equal(getTodayISO(new Date("2026-08-29T02:30:00.000Z")), "2026-08-28");
 });
 
 test("builds a fixed calendar grid for the selected month", () => {
@@ -350,7 +372,11 @@ test("normalizes string and object broadcasts", () => {
 });
 
 test("adds Brazilian World Cup 2026 broadcasters when the source is empty", () => {
-  const worldCupBroadcasts = enrichBroadcastsForCompetition("Copa do Mundo 2026", []);
+  const worldCupBroadcasts = enrichBroadcastsForCompetition(
+    "Copa do Mundo 2026",
+    [],
+    "2026-06-15"
+  );
 
   assert.deepEqual(worldCupBroadcasts.map(getBroadcastName), ["CazéTV", "Globo", "SporTV"]);
 
@@ -366,17 +392,67 @@ test("adds Brazilian World Cup 2026 broadcasters when the source is empty", () =
 });
 
 test("fills habitual league broadcasts when the source is empty", () => {
-  const brasileirao = enrichBroadcastsForCompetition("Brasileirão Série A", []);
-  const libertadores = enrichBroadcastsForCompetition("Libertadores", []);
+  const referenceDate = "2026-08-28";
+  const brasileirao = enrichBroadcastsForCompetition("Brasileirão Série A", [], referenceDate);
+  const libertadores = enrichBroadcastsForCompetition("Libertadores", [], referenceDate);
+  const copaDoBrasil = enrichBroadcastsForCompetition("Copa do Brasil", [], referenceDate);
+  const paulista = enrichBroadcastsForCompetition("Paulista Série A1", [], referenceDate);
 
-  assert.deepEqual(brasileirao.map(getBroadcastName), ["Premiere", "Globo", "CazéTV"]);
+  assert.deepEqual(brasileirao.map(getBroadcastName), [
+    "Globo",
+    "Record",
+    "SporTV",
+    "Prime Video",
+    "CazéTV",
+    "ge tv",
+    "Premiere"
+  ]);
   assert.equal(brasileirao.every((broadcast) => broadcast.source === "manual"), true);
   assert.equal(brasileirao.every((broadcast) => broadcast.guaranteed === false), true);
-  assert.deepEqual(libertadores.map(getBroadcastName), ["Paramount+", "SBT", "ESPN"]);
+  assert.deepEqual(libertadores.map(getBroadcastName), [
+    "Globo",
+    "ge tv",
+    "ESPN",
+    "Disney+",
+    "Paramount+"
+  ]);
+  assert.deepEqual(copaDoBrasil.map(getBroadcastName), [
+    "Globo",
+    "SporTV",
+    "Prime Video",
+    "Premiere",
+    "ge tv"
+  ]);
+  assert.deepEqual(paulista, []);
+});
+
+test("stops showing manual league broadcasters after their review window", () => {
+  assert.deepEqual(
+    enrichBroadcastsForCompetition("Libertadores", [], "2027-01-01"),
+    []
+  );
+  assert.deepEqual(
+    enrichBroadcastsForCompetition("Libertadores", [], "2025-12-31"),
+    []
+  );
+  assert.notDeepEqual(
+    enrichBroadcastsForCompetition("Libertadores", [], "2026-12-31"),
+    []
+  );
+  assert.deepEqual(
+    enrichBroadcastsForCompetition("Libertadores", ["ESPN"], "2027-01-01").map(
+      getBroadcastName
+    ),
+    ["ESPN"]
+  );
 });
 
 test("prefers source broadcasts over habitual league defaults", () => {
-  const broadcasts = enrichBroadcastsForCompetition("Brasileirão Série A", ["SporTV"]);
+  const broadcasts = enrichBroadcastsForCompetition(
+    "Brasileirão Série A",
+    ["SporTV"],
+    "2026-08-28"
+  );
 
   assert.deepEqual(broadcasts.map(getBroadcastName), ["SporTV"]);
   assert.equal(broadcasts[0].source, "espn");
@@ -386,7 +462,7 @@ test("deduplicates World Cup fallback with source broadcasts", () => {
   const broadcasts = enrichBroadcastsForCompetition("Copa do Mundo 2026", [
     "CazéTV",
     "Globo"
-  ]);
+  ], "2026-06-15");
 
   assert.deepEqual(broadcasts.map(getBroadcastName), ["CazéTV", "Globo"]);
   assert.equal(broadcasts[0].guaranteed, true);
@@ -951,6 +1027,119 @@ test("maps ESPN halftime status to interval", () => {
 test("fallback data does not include demonstrative matches", () => {
   assert.deepEqual(FALLBACK_DATA.games, []);
   assert.equal(FALLBACK_DATA.source.type, "offline");
+});
+
+test("keeps cached games only for leagues that fail during a partial refresh", () => {
+  const leagues = [
+    { name: "Brasileirão Série A", slug: "bra.1" },
+    { name: "Libertadores", slug: "conmebol.libertadores" },
+    { name: "Paulista Série A1", slug: "bra.camp.paulista" }
+  ];
+  const results = [
+    {
+      status: "fulfilled",
+      value: [{ id: "fresh-bra", competition: "Brasileirão Série A", home: "Novo" }]
+    },
+    { status: "rejected", reason: new Error("network") },
+    { status: "rejected", reason: new Error("network") }
+  ];
+  const cachedData = {
+    updatedAt: "2026-08-28T10:00:00.000Z",
+    games: [
+      { id: "old-bra", competition: "Brasileirão Série A", home: "Antigo" },
+      { id: "old-lib", competition: "Libertadores", home: "Preservado" }
+    ]
+  };
+
+  const data = combineLeagueResultsWithCache(
+    leagues,
+    results,
+    cachedData,
+    "2026-08-28T12:00:00.000Z"
+  );
+
+  assert.deepEqual(data.games.map((game) => game.id), ["fresh-bra", "old-lib"]);
+  assert.equal(data.games[0].dataFreshness, "fresh");
+  assert.equal(data.games[1].dataFreshness, "cached");
+  assert.equal(data.source.type, "mixed");
+  assert.deepEqual(data.source.staleCompetitions, ["Libertadores", "Paulista Série A1"]);
+  assert.match(data.source.label, /cache: Libertadores/i);
+  assert.match(data.source.label, /sem cache: Paulista Série A1/i);
+});
+
+test("reports a partial refresh without cache and rejects a total source failure", () => {
+  const leagues = [
+    { name: "Brasileirão Série A" },
+    { name: "Libertadores" }
+  ];
+  const partial = combineLeagueResultsWithCache(
+    leagues,
+    [
+      { status: "fulfilled", value: [{ id: "fresh", competition: "Brasileirão Série A" }] },
+      { status: "rejected", reason: new Error("network") }
+    ],
+    null,
+    "2026-08-28T12:00:00.000Z"
+  );
+
+  assert.deepEqual(partial.games.map((game) => game.id), ["fresh"]);
+  assert.match(partial.source.label, /sem cache: Libertadores/i);
+  assert.throws(
+    () =>
+      combineLeagueResultsWithCache(
+        leagues,
+        [
+          { status: "rejected", reason: new Error("network") },
+          { status: "rejected", reason: new Error("network") }
+        ],
+        null,
+        "2026-08-28T12:00:00.000Z"
+      ),
+    /Nenhuma fonte real respondeu/
+  );
+});
+
+test("marks a total network fallback as cached and potentially stale", () => {
+  const data = createCachedFallbackData({
+    updatedAt: "2026-08-28T10:00:00.000Z",
+    source: { label: "ESPN Brasil", type: "espn" },
+    games: [{ id: "cached", competition: "Copa do Brasil" }]
+  });
+
+  assert.equal(data.source.type, "cache");
+  assert.equal(data.source.stale, true);
+  assert.match(data.source.label, /cache local/i);
+  assert.equal(data.games[0].dataFreshness, "cached");
+});
+
+test("explains empty cached and partial results instead of reporting no matches", () => {
+  assert.deepEqual(
+    getEmptyStateContent({ type: "cache", stale: true }, "Todos"),
+    {
+      title: "Sem dados atualizados",
+      description: "O cache local não tem jogos para esta seleção. Conecte-se e atualize novamente."
+    }
+  );
+  assert.deepEqual(
+    getEmptyStateContent(
+      { type: "mixed", stale: true, staleCompetitions: ["Libertadores"] },
+      "Libertadores"
+    ),
+    {
+      title: "Campeonato temporariamente indisponível",
+      description: "A Libertadores não respondeu e não há jogos dela no cache local."
+    }
+  );
+  assert.deepEqual(
+    getEmptyStateContent(
+      { type: "mixed", stale: true, staleCompetitions: ["Libertadores"] },
+      "Brasileirão Série A"
+    ),
+    {
+      title: "Nenhum jogo encontrado",
+      description: "Altere a data ou o campeonato."
+    }
+  );
 });
 
 test("builds World Cup standings and knockout URLs", () => {

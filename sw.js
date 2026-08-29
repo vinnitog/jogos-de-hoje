@@ -1,9 +1,10 @@
-const CACHE_NAME = "jogos-hoje-v15";
+const CACHE_NAME = "jogos-hoje-v16";
 const CACHE_PREFIX = "jogos-hoje-v";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
 const GOAL_BACKGROUND_SYNC_TAG = "goal-notifications-live";
 const GOAL_STATE_CACHE_KEY = "https://jogos-hoje.local/goal-notification-state";
+const GOAL_STATE_CACHE_NAME = "jogos-hoje-goal-state-v1";
 const GOAL_NOTIFIED_TAG_LIMIT = 80;
 const LIVE_SCORE_STATUSES = ["live", "halftime", "finished"];
 const APP_SHELL = [
@@ -49,7 +50,7 @@ function getGoalStateFallback() {
 
 async function readGoalNotificationState() {
   try {
-    const cache = await caches.open(CACHE_NAME);
+    const cache = await caches.open(GOAL_STATE_CACHE_NAME);
     const response = await cache.match(GOAL_STATE_CACHE_KEY);
     if (!response) {
       return getGoalStateFallback();
@@ -69,7 +70,7 @@ async function readGoalNotificationState() {
 
 async function writeGoalNotificationState(state) {
   try {
-    const cache = await caches.open(CACHE_NAME);
+    const cache = await caches.open(GOAL_STATE_CACHE_NAME);
     await cache.put(
       GOAL_STATE_CACHE_KEY,
       new Response(JSON.stringify(state), {
@@ -80,6 +81,30 @@ async function writeGoalNotificationState(state) {
     );
   } catch {
     // If storage is unavailable, the next foreground refresh still handles alerts.
+  }
+}
+
+async function migrateGoalNotificationState() {
+  const persistentCache = await caches.open(GOAL_STATE_CACHE_NAME);
+  if (await persistentCache.match(GOAL_STATE_CACHE_KEY)) {
+    return;
+  }
+
+  const versionedCaches = (await caches.keys())
+    .filter((key) => key.startsWith(CACHE_PREFIX))
+    .sort((left, right) => {
+      const leftVersion = Number.parseInt(left.slice(CACHE_PREFIX.length), 10) || 0;
+      const rightVersion = Number.parseInt(right.slice(CACHE_PREFIX.length), 10) || 0;
+      return rightVersion - leftVersion;
+    });
+
+  for (const cacheName of versionedCaches) {
+    const legacyCache = await caches.open(cacheName);
+    const legacyState = await legacyCache.match(GOAL_STATE_CACHE_KEY);
+    if (legacyState) {
+      await persistentCache.put(GOAL_STATE_CACHE_KEY, legacyState);
+      return;
+    }
   }
 }
 
@@ -396,16 +421,38 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
+    (async () => {
+      await migrateGoalNotificationState();
+      const keys = await caches.keys();
+      await Promise.all(
         keys
           .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
           .map((key) => caches.delete(key))
-      )
-    )
+      );
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
+
+function respondWithNetworkFirst(event) {
+  const request = event.request;
+  const networkResponse = fetch(request);
+  const cacheWrite = networkResponse
+    .then(async (response) => {
+      if (!response.ok) {
+        return;
+      }
+
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    })
+    .catch(() => {
+      // Falha de rede, quota ou modo privado nao deve bloquear a resposta ao usuario.
+    });
+
+  event.waitUntil(cacheWrite);
+  event.respondWith(networkResponse.catch(() => caches.match(request)));
+}
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -416,15 +463,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.url.includes("/data/")) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
-        })
-        .catch(() => caches.match(request))
-    );
+    respondWithNetworkFirst(event);
     return;
   }
 
@@ -432,15 +471,7 @@ self.addEventListener("fetch", (event) => {
     request.url.includes("site.api.espn.com") &&
     request.url.includes("/sports/soccer")
   ) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
-        })
-        .catch(() => caches.match(request))
-    );
+    respondWithNetworkFirst(event);
     return;
   }
 
