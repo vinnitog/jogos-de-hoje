@@ -257,7 +257,7 @@ test("service worker migrates goal state out of the old versioned app cache", as
     "https://jogos-hoje.local/goal-notification-state",
     new Response(JSON.stringify(state), { headers: { "Content-Type": "application/json" } })
   );
-  harness.caches.seed("jogos-hoje-v16");
+  harness.caches.seed("jogos-hoje-v17");
 
   await harness.triggerLifecycle("activate");
 
@@ -308,7 +308,7 @@ test("service worker returns a cached data response when the network fails", asy
     }
   });
   harness.caches.seedResponse(
-    "jogos-hoje-v16",
+    "jogos-hoje-v17",
     url,
     new Response("cached payload", { status: 200 })
   );
@@ -331,15 +331,15 @@ test("service worker still returns a successful network response when cache stor
   assert.equal(await response.text(), "network payload");
 });
 
-test("service worker installs the complete app shell in cache v16", async () => {
+test("service worker installs the complete app shell in cache v17", async () => {
   const harness = createHarness();
 
   await harness.triggerLifecycle("install");
 
-  assert.deepEqual(await harness.caches.keys(), ["jogos-hoje-v16"]);
+  assert.deepEqual(await harness.caches.keys(), ["jogos-hoje-v17"]);
   assert.equal(harness.lifecycle.skipWaitingCalls, 1);
   assert.equal(harness.caches.addAllCalls.length, 1);
-  assert.equal(harness.caches.addAllCalls[0].name, "jogos-hoje-v16");
+  assert.equal(harness.caches.addAllCalls[0].name, "jogos-hoje-v17");
   assert.deepEqual(harness.caches.addAllCalls[0].requests, [
     ".",
     "index.html",
@@ -374,6 +374,7 @@ test("service worker upgrade removes only older app caches", async () => {
     "jogos-hoje-v14",
     "jogos-hoje-v15",
     "jogos-hoje-v16",
+    "jogos-hoje-v17",
     "images-v3",
     "another-app-cache"
   ]) {
@@ -386,7 +387,7 @@ test("service worker upgrade removes only older app caches", async () => {
     "another-app-cache",
     "images-v3",
     "jogos-hoje-goal-state-v1",
-    "jogos-hoje-v16"
+    "jogos-hoje-v17"
   ]);
   assert.equal((await harness.readGoalState()).games[0].score, "0 x 0");
   assert.equal(harness.lifecycle.claimCalls, 1);
@@ -447,8 +448,10 @@ test("service worker keeps the current score snapshot when the app sends prefere
 });
 
 test("service worker sync notifies a goal detected during halftime and updates state", async () => {
+  const requestedUrls = [];
   const harness = createHarness({
     fetchImpl: async (url) => {
+      requestedUrls.push(String(url));
       const events = String(url).includes("/bra.1/")
         ? [createScoreboardEvent({ statusName: "STATUS_HALFTIME", description: "Intervalo" })]
         : [];
@@ -480,7 +483,35 @@ test("service worker sync notifies a goal detected during halftime and updates s
   assert.equal(harness.notifications[0].options.body, "Brasileirão Série A: Palmeiras 1 x 0 Flamengo");
   assert.equal(harness.notifications[0].options.tag, "gol-bra.1-123-1 x 0");
   assert.equal(state.games[0].status, "halftime");
+  assert.equal(state.games.length, 1);
   assert.deepEqual(state.notifiedTags, ["gol-bra.1-123-1 x 0"]);
+  assert.equal(requestedUrls.length, 15);
+  const datesByLeague = new Map();
+  requestedUrls.forEach((url) => {
+    const segments = new URL(url).pathname.split("/");
+    const league = segments.at(-2);
+    datesByLeague.set(league, [...(datesByLeague.get(league) || []), url]);
+  });
+
+  assert.equal(datesByLeague.size, 5);
+  const expectedDates = requestedUrls
+    .slice(0, 3)
+    .map((url) => new URL(url).searchParams.get("dates"))
+    .sort();
+  for (const urls of datesByLeague.values()) {
+    const dates = urls.map((url) => new URL(url).searchParams.get("dates")).sort();
+    assert.equal(new Set(dates).size, 3);
+    assert.deepEqual(dates, expectedDates);
+    const timestamps = dates.map((date) => Date.UTC(
+      Number(date.slice(0, 4)),
+      Number(date.slice(4, 6)) - 1,
+      Number(date.slice(6, 8))
+    ));
+    assert.deepEqual(
+      [timestamps[1] - timestamps[0], timestamps[2] - timestamps[1]],
+      [86_400_000, 86_400_000]
+    );
+  }
 });
 
 test("service worker does not fetch or notify when goal notifications are disabled", async () => {
@@ -535,6 +566,57 @@ test("service worker does not duplicate an already tracked goal notification", a
   await harness.triggerSync();
 
   assert.equal(harness.notifications.length, 1);
+});
+
+test("service worker preserves a league snapshot while one date request is incomplete", async () => {
+  let partialRefresh = true;
+  let failedOneDate = false;
+  const harness = createHarness({
+    fetchImpl: async (url) => {
+      const isBrasileirao = String(url).includes("/bra.1/");
+
+      if (partialRefresh && isBrasileirao && !failedOneDate) {
+        failedOneDate = true;
+        return new Response("upstream error", { status: 500 });
+      }
+
+      const events = !partialRefresh && isBrasileirao ? [createScoreboardEvent()] : [];
+      return new Response(JSON.stringify({ events }));
+    }
+  });
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+
+  await harness.postGoalState({
+    enabled: true,
+    dateISO: today,
+    games: [
+      {
+        id: "bra.1-123",
+        competition: "Brasileirão Série A",
+        date: today,
+        home: "Palmeiras",
+        away: "Flamengo",
+        status: "live",
+        score: "0 x 0"
+      }
+    ]
+  });
+
+  await harness.triggerSync();
+  assert.equal((await harness.readGoalState()).games[0].score, "0 x 0");
+  assert.equal(harness.notifications.length, 0);
+
+  partialRefresh = false;
+  await harness.triggerSync();
+
+  assert.equal(harness.notifications.length, 1);
+  assert.equal(harness.notifications[0].options.tag, "gol-bra.1-123-1 x 0");
+  assert.equal((await harness.readGoalState()).games[0].score, "1 x 0");
 });
 
 test("service worker preserves goal state when every scoreboard request fails", async () => {

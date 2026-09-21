@@ -93,8 +93,7 @@ const LEAGUE_BROADCAST_REVIEWS = {
 };
 const ESPN_STANDINGS_BASE = "https://site.api.espn.com/apis/v2/sports/soccer";
 const WORLD_CUP_SLUG = "fifa.world";
-// Janela da fase eliminatoria da Copa 2026 (16avos ate a final).
-const WORLD_CUP_KNOCKOUT_RANGE = { start: "2026-06-28", end: "2026-07-20" };
+const WORLD_CUP_SEASON = 2026;
 // Mapa dos codigos de seasonType da ESPN para os rounds do mata-mata.
 // A ordem controla a sequencia das colunas no chaveamento.
 const WORLD_CUP_KNOCKOUT_ROUNDS = {
@@ -278,18 +277,13 @@ function buildScoreboardUrl(slug, dateISO) {
 // A ESPN agrupa os eventos por um fuso proprio (UTC/ET), nao America/Sao_Paulo.
 // Um jogo tarde da noite no Brasil (ex.: 21:30 BRT = 00:30 UTC do dia seguinte)
 // pode ser indexado pela ESPN no dia seguinte e sumir quando pedimos so um dia.
-// Por isso buscamos uma janela D-1..D+1 e deixamos o filtro por data-Brasil
-// (getDateISOInTimeZone + filterGames) escolher o dia certo de cada jogo.
-function buildScoreboardRangeUrl(slug, dateISO, daysAround = 1) {
-  const startISO = shiftDateISO(dateISO, -daysAround);
-  const endISO = shiftDateISO(dateISO, daysAround);
-  const params = new URLSearchParams({
-    dates: `${toEspnDate(startISO)}-${toEspnDate(endISO)}`,
-    region: "br",
-    lang: "pt"
-  });
-
-  return `${ESPN_API_BASE}/${slug}/scoreboard?${params.toString()}`;
+// Por isso buscamos D-1, D e D+1 separadamente: a ESPN deixou de aceitar
+// intervalos com hifen no parametro dates. O filtro por data-Brasil escolhe o
+// dia certo de cada jogo depois que os resultados sao consolidados.
+function buildScoreboardWindowUrls(slug, dateISO, daysAround = 1) {
+  return Array.from({ length: daysAround * 2 + 1 }, (_, index) =>
+    buildScoreboardUrl(slug, shiftDateISO(dateISO, index - daysAround))
+  );
 }
 
 function normalizeText(value) {
@@ -1087,11 +1081,12 @@ function buildWorldCupStandingsUrl() {
   return `${ESPN_STANDINGS_BASE}/${WORLD_CUP_SLUG}/standings?${params.toString()}`;
 }
 
-function buildWorldCupKnockoutUrl(range = WORLD_CUP_KNOCKOUT_RANGE) {
+function buildWorldCupKnockoutUrl(seasonYear = WORLD_CUP_SEASON) {
   const params = new URLSearchParams({
-    dates: `${toEspnDate(range.start)}-${toEspnDate(range.end)}`,
+    dates: String(seasonYear),
     region: "br",
-    lang: "pt"
+    lang: "pt",
+    limit: "1000"
   });
   return `${ESPN_API_BASE}/${WORLD_CUP_SLUG}/scoreboard?${params.toString()}`;
 }
@@ -1292,41 +1287,69 @@ async function loadWorldCupData(options = {}) {
   return wc;
 }
 
-async function fetchLeagueGames(league, dateISO) {
-  const response = await fetch(buildScoreboardRangeUrl(league.slug, dateISO), {
-    cache: "no-store"
-  });
+async function fetchLeagueGames(league, dateISO, fetchImpl = fetch) {
+  const results = await Promise.allSettled(
+    buildScoreboardWindowUrls(league.slug, dateISO).map(async (url) => {
+      const response = await fetchImpl(url, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Falha ao carregar ${league.name}: ${response.status}`);
+      }
+      return response.json();
+    })
+  );
+  const scoreboards = results
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value);
 
-  if (!response.ok) {
-    throw new Error(`Falha ao carregar ${league.name}: ${response.status}`);
+  if (scoreboards.length === 0) {
+    throw new Error(`Falha ao carregar ${league.name}: nenhuma data respondeu`);
   }
 
-  return mapEspnScoreboard(await response.json(), league);
+  const eventsById = new Map();
+
+  scoreboards.forEach((scoreboard) => {
+    (scoreboard.events || []).forEach((event) => {
+      eventsById.set(event.id, event);
+    });
+  });
+
+  return {
+    games: mapEspnScoreboard({ events: [...eventsById.values()] }, league),
+    incomplete: scoreboards.length < results.length
+  };
 }
 
 function combineLeagueResultsWithCache(leagues, results, cachedData, updatedAt) {
   const failedCompetitions = leagues
-    .filter((_, index) => results[index]?.status === "rejected")
+    .filter((_, index) => {
+      const result = results[index];
+      return result?.status === "rejected" || result?.value?.incomplete;
+    })
     .map((league) => league.name);
+  const rejectedCount = results.filter((result) => result.status === "rejected").length;
 
-  if (failedCompetitions.length === leagues.length) {
+  if (rejectedCount === leagues.length) {
     throw new Error("Nenhuma fonte real respondeu.");
   }
 
   const freshGames = results.flatMap((result) =>
     result.status === "fulfilled"
-      ? result.value.map((game) => ({ ...game, dataFreshness: "fresh" }))
+      ? result.value.games.map((game) => ({ ...game, dataFreshness: "fresh" }))
       : []
   );
-  const cachedGames = (cachedData?.games || [])
+  const cachedCandidates = (cachedData?.games || [])
     .filter((game) => failedCompetitions.includes(game.competition))
     .map((game) => ({
       ...game,
       dataFreshness: "cached",
       cachedAt: game.cachedAt || cachedData.updatedAt || null
     }));
+  const freshGameKeys = new Set(freshGames.map((game) => getGoalNotificationGameKey(game)));
+  const cachedGames = cachedCandidates.filter(
+    (game) => !freshGameKeys.has(getGoalNotificationGameKey(game))
+  );
   const cachedCompetitions = [
-    ...new Set(cachedGames.map((game) => game.competition).filter(Boolean))
+    ...new Set(cachedCandidates.map((game) => game.competition).filter(Boolean))
   ];
   const uncachedCompetitions = failedCompetitions.filter(
     (competition) => !cachedCompetitions.includes(competition)
@@ -2336,7 +2359,7 @@ if (typeof module !== "undefined") {
     LEAGUES,
     buildWhatsAppUrl,
     buildScoreboardUrl,
-    buildScoreboardRangeUrl,
+    buildScoreboardWindowUrls,
     detectGoalEvents,
     clearLegacyStoredContact,
     extractLiveClock,
@@ -2348,6 +2371,7 @@ if (typeof module !== "undefined") {
     formatGamesShareMessage,
     formatRefreshInterval,
     filterGames,
+    fetchLeagueGames,
     getAutoRefreshInterval,
     getMatchDisplayValue,
     getStatusLabel,

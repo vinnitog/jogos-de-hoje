@@ -93,8 +93,8 @@ Feature (2026-06-24) - Tabela e chaveamento da Copa 2026:
 - Classificacao: `https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings`
   (`region=br`, `lang=pt`). Mapeada por `mapEspnStandings` em colunas P/J/V/E/D/SG, com
   destaque para os classificados (`advanced`).
-- Chaveamento: scoreboard com intervalo de datas da fase eliminatoria
-  (`dates=AAAAMMDD-AAAAMMDD`), agrupado por `season.type` (16avos -> Final) em
+- Chaveamento: scoreboard da temporada completa (`dates=2026&limit=1000`),
+  agrupado por `season.type` (16avos -> Final) em
   `mapEspnKnockout`. Vencedor de cada jogo encerrado fica destacado.
 - O painel recarrega junto do auto-refresh dos jogos (resultados atualizam ao fim de
   cada partida) e respeita um intervalo minimo de cache de 90s.
@@ -117,9 +117,20 @@ Janela de datas na fonte (2026-07-03):
 
 A ESPN agrupa eventos por fuso proprio (UTC/ET), nao `America/Sao_Paulo`. Jogos
 tarde da noite no Brasil caiam no dia seguinte na fonte e sumiam da lista. O app
-e o service worker passam a buscar a janela `D-1..D+1` (`buildScoreboardRangeUrl`)
-e o filtro por data-Brasil escolhe o dia certo de cada jogo. O card exibe o tempo
-de jogo ao vivo (`status.displayClock`, ex.: "Ao vivo - 67'").
+e o service worker consultam `D-1`, `D` e `D+1` com tres URLs de data unica,
+consolidam os eventos por ID e deixam o filtro por data-Brasil escolher o dia
+certo. O card exibe o tempo de jogo ao vivo (`status.displayClock`, ex.:
+"Ao vivo - 67'").
+
+Compatibilidade da ESPN (2026-09-21):
+
+- O endpoint passou a responder HTTP 400 para `dates=AAAAMMDD-AAAAMMDD`.
+- Consultas com uma data (`dates=AAAAMMDD`) continuam respondendo HTTP 200.
+- Se apenas uma das tres datas falhar, as respostas validas sao aproveitadas e a
+  competicao fica marcada como parcial; o cache anterior preenche jogos ausentes
+  sem substituir versoes frescas do mesmo evento.
+- O chaveamento da Copa usa a consulta anual `dates=2026&limit=1000`, que retorna
+  a temporada completa; rounds que nao pertencem ao mata-mata seguem filtrados.
 
 Atualizacao automatica:
 

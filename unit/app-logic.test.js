@@ -8,7 +8,7 @@ const {
   FALLBACK_DATA,
   LEAGUES,
   buildScoreboardUrl,
-  buildScoreboardRangeUrl,
+  buildScoreboardWindowUrls,
   buildWhatsAppUrl,
   clearLegacyStoredContact,
   detectGoalEvents,
@@ -18,6 +18,7 @@ const {
   getFlagSources,
   enrichBroadcastsForCompetition,
   filterGames,
+  fetchLeagueGames,
   formatBroadcastsForShare,
   formatDateDisplayParts,
   formatGamesShareMessage,
@@ -815,19 +816,108 @@ test("builds localized ESPN scoreboard URLs", () => {
   );
 });
 
-test("scoreboard range URL covers the day before and after to fix timezone gaps", () => {
-  const url = buildScoreboardRangeUrl("bra.1", "2026-06-15");
+test("builds three single-day scoreboard URLs around the selected date", () => {
+  assert.deepEqual(buildScoreboardWindowUrls("bra.1", "2026-06-15"), [
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard?dates=20260614&region=br&lang=pt",
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard?dates=20260615&region=br&lang=pt",
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard?dates=20260616&region=br&lang=pt"
+  ]);
 
-  assert.equal(
-    url,
-    "https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard?dates=20260614-20260616&region=br&lang=pt"
+  assert.deepEqual(
+    buildScoreboardWindowUrls("bra.1", "2026-12-31").map((url) => new URL(url).searchParams.get("dates")),
+    ["20261230", "20261231", "20270101"]
+  );
+});
+
+test("loads the three single-day scoreboards and deduplicates repeated events", async () => {
+  const requestedUrls = [];
+  const createEvent = (id, date) => ({
+    id,
+    date,
+    competitions: [
+      {
+        date,
+        status: { type: { state: "pre" } },
+        competitors: [
+          { homeAway: "home", team: { displayName: `Mandante ${id}` } },
+          { homeAway: "away", team: { displayName: `Visitante ${id}` } }
+        ]
+      }
+    ]
+  });
+  const fetchImpl = async (url) => {
+    requestedUrls.push(url);
+    const date = new URL(url).searchParams.get("dates");
+    const eventsByDate = {
+      20260614: [createEvent("repeated", "2026-06-15T01:00:00Z")],
+      20260615: [
+        createEvent("repeated", "2026-06-15T01:00:00Z"),
+        createEvent("selected", "2026-06-15T19:00:00Z")
+      ],
+      20260616: []
+    };
+
+    return new Response(JSON.stringify({ events: eventsByDate[date] }), { status: 200 });
+  };
+
+  const result = await fetchLeagueGames(
+    { name: "Brasileirão Série A", slug: "bra.1" },
+    "2026-06-15",
+    fetchImpl
   );
 
-  // Cobre virada de mes/ano corretamente.
-  assert.match(
-    buildScoreboardRangeUrl("bra.1", "2026-12-31"),
-    /dates=20261230-20270101/
+  assert.deepEqual(
+    requestedUrls.map((url) => new URL(url).searchParams.get("dates")),
+    ["20260614", "20260615", "20260616"]
   );
+  assert.equal(result.incomplete, false);
+  assert.deepEqual(result.games.map((game) => game.id), ["bra.1-repeated", "bra.1-selected"]);
+});
+
+test("keeps valid scoreboard data when one window date fails", async () => {
+  const event = {
+    id: "selected",
+    date: "2026-06-15T19:00:00Z",
+    competitions: [
+      {
+        date: "2026-06-15T19:00:00Z",
+        status: { type: { state: "pre" } },
+        competitors: [
+          { homeAway: "home", team: { displayName: "Palmeiras" } },
+          { homeAway: "away", team: { displayName: "Flamengo" } }
+        ]
+      }
+    ]
+  };
+  const fetchImpl = async (url) => {
+    const date = new URL(url).searchParams.get("dates");
+
+    if (date === "20260614") {
+      return new Response("upstream error", { status: 500 });
+    }
+
+    return new Response(JSON.stringify({ events: date === "20260615" ? [event] : [] }));
+  };
+
+  const result = await fetchLeagueGames(
+    { name: "Brasileirão Série A", slug: "bra.1" },
+    "2026-06-15",
+    fetchImpl
+  );
+
+  assert.equal(result.incomplete, true);
+  assert.deepEqual(result.games.map((game) => game.id), ["bra.1-selected"]);
+});
+
+test("treats three successful empty scoreboards as a legitimate zero games result", async () => {
+  const result = await fetchLeagueGames(
+    { name: "Brasileirão Série A", slug: "bra.1" },
+    "2026-06-15",
+    async () => new Response(JSON.stringify({ events: [] }))
+  );
+
+  assert.equal(result.incomplete, false);
+  assert.deepEqual(result.games, []);
 });
 
 test("late-night Brazilian kickoff maps to the correct local date", () => {
@@ -1038,7 +1128,10 @@ test("keeps cached games only for leagues that fail during a partial refresh", (
   const results = [
     {
       status: "fulfilled",
-      value: [{ id: "fresh-bra", competition: "Brasileirão Série A", home: "Novo" }]
+      value: {
+        games: [{ id: "fresh-bra", competition: "Brasileirão Série A", home: "Novo" }],
+        incomplete: false
+      }
     },
     { status: "rejected", reason: new Error("network") },
     { status: "rejected", reason: new Error("network") }
@@ -1075,7 +1168,13 @@ test("reports a partial refresh without cache and rejects a total source failure
   const partial = combineLeagueResultsWithCache(
     leagues,
     [
-      { status: "fulfilled", value: [{ id: "fresh", competition: "Brasileirão Série A" }] },
+      {
+        status: "fulfilled",
+        value: {
+          games: [{ id: "fresh", competition: "Brasileirão Série A" }],
+          incomplete: false
+        }
+      },
       { status: "rejected", reason: new Error("network") }
     ],
     null,
@@ -1097,6 +1196,37 @@ test("reports a partial refresh without cache and rejects a total source failure
       ),
     /Nenhuma fonte real respondeu/
   );
+});
+
+test("marks an incomplete date window as partial and fills its missing games from cache", () => {
+  const competition = "Brasileirão Série A";
+  const data = combineLeagueResultsWithCache(
+    [{ name: competition, slug: "bra.1" }],
+    [
+      {
+        status: "fulfilled",
+        value: {
+          games: [{ id: "same", competition, score: "1 x 0" }],
+          incomplete: true
+        }
+      }
+    ],
+    {
+      updatedAt: "2026-09-21T10:00:00.000Z",
+      games: [
+        { id: "same", competition, score: "0 x 0" },
+        { id: "missing-adjacent", competition, score: "" }
+      ]
+    },
+    "2026-09-21T10:01:00.000Z"
+  );
+
+  assert.equal(data.source.type, "mixed");
+  assert.deepEqual(data.source.staleCompetitions, [competition]);
+  assert.match(data.source.label, /cache: Brasileirão Série A/i);
+  assert.deepEqual(data.games.map((game) => game.id), ["same", "missing-adjacent"]);
+  assert.equal(data.games[0].dataFreshness, "fresh");
+  assert.equal(data.games[1].dataFreshness, "cached");
 });
 
 test("marks a total network fallback as cached and potentially stale", () => {
@@ -1148,8 +1278,8 @@ test("builds World Cup standings and knockout URLs", () => {
     "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings?region=br&lang=pt"
   );
   assert.equal(
-    buildWorldCupKnockoutUrl({ start: "2026-06-28", end: "2026-07-20" }),
-    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260628-20260720&region=br&lang=pt"
+    buildWorldCupKnockoutUrl(),
+    "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=2026&region=br&lang=pt&limit=1000"
   );
 });
 

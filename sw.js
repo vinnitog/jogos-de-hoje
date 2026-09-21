@@ -1,4 +1,4 @@
-const CACHE_NAME = "jogos-hoje-v16";
+const CACHE_NAME = "jogos-hoje-v17";
 const CACHE_PREFIX = "jogos-hoje-v";
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const TIME_ZONE = "America/Sao_Paulo";
@@ -159,18 +159,12 @@ function shiftDateISO(dateISO, days) {
 }
 
 // A ESPN agrupa eventos por fuso proprio (UTC/ET), nao America/Sao_Paulo. Jogos
-// tarde da noite no Brasil caem no dia seguinte na fonte. Buscamos D-1..D+1 para
-// nao perder placares ao vivo na deteccao de gols em background.
-function buildScoreboardRangeUrl(slug, dateISO, daysAround = 1) {
-  const params = new URLSearchParams({
-    dates: `${toEspnDate(shiftDateISO(dateISO, -daysAround))}-${toEspnDate(
-      shiftDateISO(dateISO, daysAround)
-    )}`,
-    region: "br",
-    lang: "pt"
-  });
-
-  return `${ESPN_API_BASE}/${slug}/scoreboard?${params.toString()}`;
+// tarde da noite no Brasil caem no dia seguinte na fonte. A ESPN nao aceita mais
+// intervalos com hifen, entao consultamos D-1, D e D+1 separadamente.
+function buildScoreboardWindowUrls(slug, dateISO, daysAround = 1) {
+  return Array.from({ length: daysAround * 2 + 1 }, (_, index) =>
+    buildScoreboardUrl(slug, shiftDateISO(dateISO, index - daysAround))
+  );
 }
 
 function mapEspnStatus(statusType = {}) {
@@ -229,16 +223,33 @@ function mapEspnEvent(event, league) {
 }
 
 async function fetchLeagueGames(league, dateISO) {
-  const response = await fetch(buildScoreboardRangeUrl(league.slug, dateISO), {
-    cache: "no-store"
-  });
+  const results = await Promise.allSettled(
+    buildScoreboardWindowUrls(league.slug, dateISO).map(async (url) => {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Failed to load ${league.name}: ${response.status}`);
+      }
+      return response.json();
+    })
+  );
+  const scoreboards = results
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value);
 
-  if (!response.ok) {
-    throw new Error(`Failed to load ${league.name}: ${response.status}`);
+  if (scoreboards.length === 0) {
+    throw new Error(`Failed to load ${league.name}: no date responded`);
   }
 
-  const scoreboard = await response.json();
-  return (scoreboard.events || []).map((event) => mapEspnEvent(event, league));
+  const eventsById = new Map();
+
+  scoreboards.forEach((scoreboard) => {
+    (scoreboard.events || []).forEach((event) => eventsById.set(event.id, event));
+  });
+
+  return {
+    games: [...eventsById.values()].map((event) => mapEspnEvent(event, league)),
+    incomplete: scoreboards.length < results.length
+  };
 }
 
 async function fetchTodayGames(dateISO) {
@@ -251,7 +262,17 @@ async function fetchTodayGames(dateISO) {
     throw new Error("All scoreboard requests failed.");
   }
 
-  return fulfilled.flatMap((result) => result.value);
+  const incompleteCompetitions = LEAGUES
+    .filter((_, index) => {
+      const result = results[index];
+      return result.status === "rejected" || result.value.incomplete;
+    })
+    .map((league) => league.name);
+
+  return {
+    games: fulfilled.flatMap((result) => result.value.games),
+    incompleteCompetitions
+  };
 }
 
 function parseScore(score) {
@@ -373,13 +394,26 @@ async function syncGoalNotifications() {
   }
 
   const dateISO = getTodayISOInTimeZone();
-  let nextGames = [];
+  let refreshResult;
 
   try {
-    nextGames = await fetchTodayGames(dateISO);
+    refreshResult = await fetchTodayGames(dateISO);
   } catch {
     return;
   }
+
+  const freshGames = refreshResult.games;
+  const incompleteCompetitions = new Set(refreshResult.incompleteCompetitions);
+  const preservedGames = state.dateISO === dateISO
+    ? state.games.filter((game) => incompleteCompetitions.has(game.competition))
+    : [];
+  const nextGamesById = new Map(
+    preservedGames.map((game) => [getGoalNotificationGameKey(game), game])
+  );
+  freshGames.forEach((game) => {
+    nextGamesById.set(getGoalNotificationGameKey(game), game);
+  });
+  const nextGames = [...nextGamesById.values()];
 
   const goalEvents = detectGoalEvents(state.games, nextGames);
 
